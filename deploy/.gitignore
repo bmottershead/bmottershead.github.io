@@ -1,0 +1,7 @@
+# Local secrets / build artifacts — never commit these.
+bootstrap/.app/
+*.pem
+private-key-pkcs8.pem
+node_modules/
+.dev.vars
+.wrangler/

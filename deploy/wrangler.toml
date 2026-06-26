@@ -1,0 +1,24 @@
+name = "countdown"
+main = "src/index.js"
+compatibility_date = "2024-11-01"
+
+# Non-secret config.
+[vars]
+REPO_OWNER = "bmottershead"
+REPO_NAME = "bmottershead.github.io"
+REPO_BRANCH = "main"
+FILE_PATH = "countdown.json"
+GITHUB_APP_ID = "4155092"
+# OAuth client id of the same GitHub App (NOT secret). Looks like "Iv23li...".
+GITHUB_CLIENT_ID = "Iv23li609lMVQIYXKRCl"
+# Where to send the browser back after login (gets #session=... appended).
+SITE_URL = "https://bmottershead.github.io"
+# Comma-separated GitHub logins allowed to run the countdown. Empty = any user.
+ALLOWED_LOGINS = "bmottershead"
+# Browser origins allowed to call the Worker (CORS).
+ALLOWED_ORIGINS = "https://bmottershead.github.io,http://localhost:8000"
+
+# Secrets (set with `wrangler secret put <NAME>`, do NOT put here):
+#   GITHUB_APP_PRIVATE_KEY   App private key, PKCS#8 PEM   (already set)
+#   GITHUB_CLIENT_SECRET     OAuth client secret of the App
+#   SESSION_SECRET           random string for signing session JWTs
