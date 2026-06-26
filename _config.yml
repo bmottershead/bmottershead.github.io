@@ -1,0 +1,5 @@
+# GitHub Pages (Jekyll) build config.
+# Keep design notes in the repo but out of the published site.
+exclude:
+  - plans
+  - README.md
