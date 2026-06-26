@@ -7,10 +7,22 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div id="number">10</div>
-  <div id="timestamp">&nbsp;</div>
-  <button id="countdownBtn">Countdown</button>
-  <div id="status">&nbsp;</div>
+  <header id="authbar">
+    <button id="loginBtn" hidden>Sign in with GitHub</button>
+    <span id="userBox" hidden>
+      <img id="avatar" alt="" width="28" height="28" />
+      <span id="userName"></span>
+      <button id="logoutBtn" class="link">Sign out</button>
+    </span>
+  </header>
+
+  <main>
+    <div id="number">10</div>
+    <div id="timestamp">&nbsp;</div>
+    <button id="countdownBtn" disabled>Countdown</button>
+    <div id="status">&nbsp;</div>
+  </main>
+
   <script type="module" src="countdown.js"></script>
 </body>
 </html>
