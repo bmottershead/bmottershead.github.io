@@ -1,0 +1,38 @@
+name: Append countdown to log
+
+# Runs whenever countdown.json is committed (by the Worker on reaching zero).
+on:
+  push:
+    branches: [main]
+    paths:
+      - countdown.json
+
+# Needed to push the updated log back to the repo.
+permissions:
+  contents: write
+
+# Serialize runs so concurrent countdowns can't clash on the log file.
+concurrency:
+  group: countdown-log
+  cancel-in-progress: false
+
+jobs:
+  append:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Append countdown.json as one JSONL line
+        run: jq -c '.' countdown.json >> countdown-log.json
+
+      - name: Commit and push the log
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- countdown-log.json; then
+            echo "No change to countdown-log.json — nothing to commit."
+            exit 0
+          fi
+          git add countdown-log.json
+          git commit -m "Append countdown run to countdown-log.json"
+          git push
