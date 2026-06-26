@@ -29,10 +29,11 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet -- countdown-log.json; then
+          git add countdown-log.json
+          # --cached catches a brand-new (untracked) file, which plain `git diff` misses.
+          if git diff --cached --quiet; then
             echo "No change to countdown-log.json — nothing to commit."
             exit 0
           fi
-          git add countdown-log.json
           git commit -m "Append countdown run to countdown-log.json"
           git push
