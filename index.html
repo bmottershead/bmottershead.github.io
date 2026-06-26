@@ -1,2 +1,120 @@
-Brian Mottershead GitHub Pages Site (2026-06-26)
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Countdown Demo</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    margin: 0;
+    gap: 1rem;
+    text-align: center;
+  }
+  #number {
+    font-size: 8rem;
+    font-weight: 700;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  #timestamp {
+    font-size: 1rem;
+    opacity: 0.7;
+    font-variant-numeric: tabular-nums;
+  }
+  button {
+    font-size: 1.25rem;
+    padding: 0.6rem 1.6rem;
+    border-radius: 8px;
+    border: 1px solid currentColor;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+  }
+  button:disabled { opacity: 0.4; cursor: default; }
+  #status {
+    font-size: 0.9rem;
+    max-width: 30rem;
+    min-height: 1.2em;
+    opacity: 0.85;
+  }
+  #status.error { color: #d33; opacity: 1; }
+  #status.ok { color: #2a8; opacity: 1; }
+  a { color: inherit; }
+</style>
+</head>
+<body>
+  <div id="number">10</div>
+  <div id="timestamp">&nbsp;</div>
+  <button id="countdownBtn">Countdown</button>
+  <div id="status">&nbsp;</div>
 
+  <script>
+    // ---- Config -----------------------------------------------------------
+    // Cloudflare Worker that commits countdown.json via the GitHub App.
+    const WORKER_URL = "https://countdown.riverscape.workers.dev";
+    const START = 10;
+
+    // ---- State ------------------------------------------------------------
+    let count = START;
+    const timestamps = [];   // collected as the user counts down
+
+    const numberEl    = document.getElementById("number");
+    const timestampEl = document.getElementById("timestamp");
+    const btn         = document.getElementById("countdownBtn");
+    const statusEl    = document.getElementById("status");
+
+    function setStatus(msg, kind) {
+      statusEl.textContent = msg || " ";
+      statusEl.className = kind || "";
+    }
+
+    btn.addEventListener("click", () => {
+      if (count <= 0) return;
+      count -= 1;
+      const ts = new Date().toISOString();
+      timestamps.push(ts);
+      timestampEl.textContent = ts;
+      numberEl.textContent = count;
+
+      if (count === 0) {
+        btn.disabled = true;
+        pushCountdown();
+      }
+    });
+
+    // ---- Push to Worker ---------------------------------------------------
+    async function pushCountdown() {
+      setStatus("Reached zero — committing countdown.json…");
+      try {
+        const resp = await fetch(WORKER_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ countdown: timestamps })
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || !data.ok) {
+          throw new Error(data.error || ("HTTP " + resp.status));
+        }
+        setStatus("Committed countdown.json ✅ ", "ok");
+        if (data.commit) {
+          const a = document.createElement("a");
+          a.href = data.commit;
+          a.textContent = "view commit";
+          a.target = "_blank";
+          a.rel = "noopener";
+          statusEl.appendChild(a);
+        }
+      } catch (err) {
+        setStatus("Failed to commit: " + err.message, "error");
+      }
+    }
+  </script>
+</body>
+</html>
