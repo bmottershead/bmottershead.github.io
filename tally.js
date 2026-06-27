@@ -10,7 +10,7 @@ let count = 0;
 let timestamps = [];     // clicks accumulated since the last save (unsaved batch)
 let session = null;      // signed session JWT from the Worker
 let user = null;         // { login, name, avatar, allowed }
-let lastSaved = null;    // the most recent saved batch (for optimistic history display)
+let savedBatches = [];   // batches saved this session (for optimistic history display)
 
 const numberEl    = document.getElementById("number");
 const timestampEl = document.getElementById("timestamp");
@@ -155,7 +155,7 @@ async function save() {
         }
         // Remember it so History can show it immediately, before the Action
         // appends it to timestamps.json and raw.githubusercontent catches up.
-        lastSaved = { timestamps: timestamps.slice(), by: user ? user.login : null };
+        savedBatches.push({ timestamps: timestamps.slice(), by: user ? user.login : null });
         // Start a fresh batch.
         count = 0;
         timestamps = [];
@@ -197,16 +197,22 @@ async function showHistory() {
             .filter(Boolean)
             .map((l) => JSON.parse(l));
 
-        // The committed log lags a save by a few seconds (Action + CDN). If our
-        // last saved batch isn't in there yet, show it optimistically; once the
-        // log catches up it's already present, so we don't double-count.
-        let pending = false;
-        if (lastSaved && lastSaved.timestamps.length && !runsContain(runs, lastSaved)) {
-            runs.push(lastSaved);
-            pending = true;
+        // The committed log lags each save by a few seconds (Action + CDN). Show
+        // any batches saved this session that aren't in the log yet; once the
+        // log catches up they're already present, so we don't double-count.
+        let pending = 0;
+        for (const batch of savedBatches) {
+            if (batch.timestamps.length && !runsContain(runs, batch)) {
+                runs.push(batch);
+                pending++;
+            }
         }
         renderHistory(runs);
-        setStatus(pending ? "Most recent run is still syncing to the log…" : "");
+        setStatus(
+            pending
+                ? `${pending} recent run${pending > 1 ? "s are" : " is"} still syncing to the log…`
+                : ""
+        );
     } catch (err) {
         setStatus("Failed to load history: " + err.message, "error");
     }
