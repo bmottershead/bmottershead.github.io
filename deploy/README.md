@@ -138,3 +138,18 @@ logs while you click.
   site itself). That's acceptable with a single trusted `ALLOWED_LOGINS`. For
   multiple/untrusted users, add a path allowlist and/or per-user ownership rules
   (the Worker would then need a little app awareness).
+
+## Future work
+
+- **Per-user write isolation (deferred — YAGNI; single user today).** If this
+  ever goes multi-user, add a config toggle `ENFORCE_USER_PREFIX`. When on,
+  `handleCommit` requires the committed path to start with `<login>/` (the
+  trailing slash matters, so `bmottershead/` doesn't also match
+  `bmottershead-evil/`). Keep the existing `..` / leading-`/` rejection *before*
+  the prefix check, and use the login's canonical casing as the folder name
+  (git paths are case-sensitive). Reads stay open (public repo); only writes are
+  gated. `ENFORCE_USER_PREFIX` on + empty `ALLOWED_LOGINS` = any GitHub user can
+  sign in but only write under their own `/<login>/` folder. The app would then
+  keep its files under `<login>/` and the Action would key off that path — an
+  app-side change, since path/identity rules don't break the content-blind
+  property.
