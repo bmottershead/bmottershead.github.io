@@ -1,10 +1,16 @@
-# Countdown Worker (`deploy/`)
+# GitHub OAuth + commit proxy (`deploy/`)
 
-Cloudflare Worker that backs the tally-counter demo. It handles **"Login with
-GitHub"** and commits `most-recent-timestamps.json` to this repo on behalf of a
-**GitHub App**. The Pages site sends the timestamps here with a session token; the Worker
-verifies the session, then mints a short-lived, repo-scoped installation token
-and does the commit. **No credentials ever reach the browser.**
+A generic, **content-blind** Cloudflare Worker: it handles **"Login with
+GitHub"** and lets an authorized user commit **arbitrary files** to one
+configured repo on behalf of a **GitHub App**. It knows nothing about any
+particular application's file format — the caller supplies the `path`,
+`content`, and commit `message`. The Worker verifies the session, mints a
+short-lived installation token scoped to `contents:write` on the one configured
+repo, stamps the commit author with the authenticated user's identity, and does
+the commit. **No credentials ever reach the browser.**
+
+Any static site can use it as its backend; the tally-counter demo in this repo
+is just one such app.
 
 ```
                        sign in
@@ -12,8 +18,8 @@ browser (Pages) ──GET /auth/login──▶ Worker ──▶ GitHub OAuth ─
       ▲                                                            │ mints session JWT
       └──────────────── #session=<jwt> ───────────────────────────┘
 
-browser ──POST {timestamps:[…]} + Bearer <jwt>──▶ Worker ──App token──▶ Contents API
-                                                   (gated on ALLOWED_LOGINS)
+browser ──POST /commit {path,content,message} + Bearer <jwt>──▶ Worker ──App token──▶ Contents API
+                                                                (gated on ALLOWED_LOGINS)
 ```
 
 This directory is **excluded from the published site** (`deploy` is in the
@@ -23,11 +29,11 @@ repo's `_config.yml` Jekyll `exclude`), so the Worker source isn't served.
 
 | Path | Role |
 |------|------|
-| `src/index.js` | The Worker: auth routes + gated commit. |
+| `src/index.js` | The Worker: auth routes + generic gated commit. |
 | `wrangler.toml` | Non-secret config (`[vars]`). |
 | `bootstrap/` | One-command setup that creates the GitHub App + deploys (see `bootstrap/README.md`). |
-| `../index.html`, `../tally.js`, `../style.css` | The site frontend (sign-in UI + count/save/history). |
-| `../.github/workflows/append-log.yml` | Action that appends each commit to `timestamps.json`. |
+| `../index.html`, `../tally.js`, `../style.css` | The demo app frontend (sign-in UI + count/save/history). It owns the file paths/formats. |
+| `../.github/workflows/append-log.yml` | Demo Action: appends each `most-recent-timestamps.json` commit to `timestamps.json`. |
 
 ## Routes
 
@@ -36,8 +42,7 @@ repo's `_config.yml` Jekyll `exclude`), so the Worker source isn't served.
 | `GET /auth/login` | Redirect to GitHub's OAuth authorize page. |
 | `GET /auth/callback` | Exchange the code, mint a session JWT, redirect to `SITE_URL/#session=…`. |
 | `GET /auth/me` | Return the signed-in user (`Authorization: Bearer <jwt>`) or 401. |
-| `POST /` | Commit `most-recent-timestamps.json`. Requires a valid session whose login is allowed. |
-| `POST /clear` | Remove the caller's own rows from `timestamps.json`. Requires a valid, allowed session. |
+| `POST /commit` | Commit a file. Body: `{ path, content, message?, branch? }`. Requires a valid session whose login is allowed. |
 
 ## Setup
 
@@ -79,8 +84,7 @@ bootstrap/setup.sh        # defaults target this repo; override OWNER/REPO/etc. 
 
 | Var | Meaning |
 |---|---|
-| `REPO_OWNER`, `REPO_NAME`, `REPO_BRANCH` | Target repo + branch. |
-| `FILE_PATH` | File to write (`most-recent-timestamps.json`). |
+| `REPO_OWNER`, `REPO_NAME`, `REPO_BRANCH` | Target repo + default branch (the only repo the Worker can write to). |
 | `GITHUB_APP_ID`, `GITHUB_CLIENT_ID` | App identifiers (Client ID is public by design). |
 | `SITE_URL` | Where login redirects back to. |
 | `ALLOWED_LOGINS` | Comma-separated GitHub logins allowed to commit. Empty = any signed-in user. |
@@ -107,8 +111,8 @@ if your Worker URL differs.
 
 ```sh
 # Unauthenticated commit is rejected:
-curl -s -X POST https://countdown.riverscape.workers.dev \
-  -H 'Content-Type: application/json' -d '{"timestamps":["x"]}'
+curl -s -X POST https://countdown.riverscape.workers.dev/commit \
+  -H 'Content-Type: application/json' -d '{"path":"x.json","content":"{}"}'
 # -> {"error":"Sign in with GitHub first."}   (HTTP 401)
 
 # Login redirect points at GitHub with the right client_id:
@@ -121,10 +125,16 @@ logs while you click.
 ## Notes / hardening
 
 - The private key exists only as a Cloudflare secret; no local copy is kept.
-- Commits are gated on a valid session whose login is in `ALLOWED_LOGINS`, and
-  carry `"by": "<username>"` for attribution (which flows into the log too).
+- Commits are gated on a valid session whose login is in `ALLOWED_LOGINS`. The
+  Worker stamps the **git commit author** with the authenticated user, so
+  attribution is authoritative regardless of the file content the app sends.
 - The endpoint is still reachable by anyone (CORS only restricts browsers), but
   the session gate means only authorized GitHub users can cause a commit. To
   further harden, add Cloudflare Turnstile or a rate limit.
 - The installation token is created per request, scoped to `contents:write` on
   the single repo, and expires in ~1 hour.
+- **Content-blind:** `/commit` can write *any path within the one repo*, so any
+  allowed user can overwrite any file (including `.github/workflows/*` and the
+  site itself). That's acceptable with a single trusted `ALLOWED_LOGINS`. For
+  multiple/untrusted users, add a path allowlist and/or per-user ownership rules
+  (the Worker would then need a little app awareness).

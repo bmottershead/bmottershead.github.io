@@ -1,10 +1,30 @@
 const WORKER_URL = "https://countdown.riverscape.workers.dev";
 const SESSION_KEY = "cd_session";
 
-// Where the saved history lives (read directly from the repo via raw.githubusercontent).
+// Repo files this app owns. The Worker is content-blind — these paths and
+// their formats are entirely the app's concern.
 const REPO = "bmottershead/bmottershead.github.io";
 const BRANCH = "main";
-const LOG_FILE = "timestamps.json";
+const SAVE_FILE = "most-recent-timestamps.json"; // the Action appends this to the log
+const LOG_FILE = "timestamps.json";              // append-only history (read via raw)
+
+// Commit a file through the proxy. Returns the parsed response.
+// Throws on non-OK; signs out on 401 so the caller can stop.
+async function commit(path, content, message) {
+    const resp = await fetch(WORKER_URL + "/commit", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer " + session
+        },
+        body: JSON.stringify({ path, content, message })
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (resp.status === 401) { signOut(); throw new Error(data.error || "Session expired."); }
+    if (resp.status === 403) { throw new Error(data.error || "Not authorized."); }
+    if (!resp.ok || !data.ok) { throw new Error(data.error || ("HTTP " + resp.status)); }
+    return data;
+}
 
 let count = 0;
 let timestamps = [];     // clicks accumulated since the last save (unsaved batch)
@@ -129,23 +149,9 @@ async function save() {
     if (timestamps.length === 0) return true;
     setStatus("Saving timestamps…");
     try {
-        const resp = await fetch(WORKER_URL, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: "Bearer " + session
-            },
-            body: JSON.stringify({ timestamps })
-        });
-        const data = await resp.json().catch(() => ({}));
-        if (resp.status === 401 || resp.status === 403) {
-            setStatus(data.error || "Not authorized.", "error");
-            if (resp.status === 401) signOut(); // session expired/invalid
-            return false;
-        }
-        if (!resp.ok || !data.ok) {
-            throw new Error(data.error || ("HTTP " + resp.status));
-        }
+        const by = user ? user.login : null;
+        const content = JSON.stringify({ timestamps, by }, null, 2) + "\n";
+        const data = await commit(SAVE_FILE, content, `Save timestamps by @${by}`);
         setStatus("Saved ✅ ", "ok");
         if (data.commit) {
             const a = document.createElement("a");
@@ -157,7 +163,7 @@ async function save() {
         }
         // Remember it so History can show it immediately, before the Action
         // appends it to timestamps.json and raw.githubusercontent catches up.
-        savedBatches.push({ timestamps: timestamps.slice(), by: user ? user.login : null });
+        savedBatches.push({ timestamps: timestamps.slice(), by });
         // Start a fresh batch.
         count = 0;
         timestamps = [];
@@ -188,50 +194,47 @@ clearBtn.addEventListener("click", async () => {
     }
     setStatus("Clearing your history…");
     try {
-        const resp = await fetch(WORKER_URL + "/clear", {
-            method: "POST",
-            headers: { Authorization: "Bearer " + session }
+        const me = user.login.toLowerCase();
+        // Read the current log, drop our own rows, commit the rest. (The proxy
+        // is content-blind, so this filtering is the app's job.)
+        const lines = await fetchLogLines();
+        const kept = lines.filter((line) => {
+            try {
+                return String(JSON.parse(line).by || "").toLowerCase() !== me;
+            } catch {
+                return true; // leave anything unparseable untouched
+            }
         });
-        const data = await resp.json().catch(() => ({}));
-        if (resp.status === 401 || resp.status === 403) {
-            setStatus(data.error || "Not authorized.", "error");
-            if (resp.status === 401) signOut();
+        const removed = lines.length - kept.length;
+        savedBatches = [];          // drop the optimistic rows too
+
+        if (removed === 0) {
+            setStatus("Nothing of yours to clear.", "ok");
             return;
         }
-        if (!resp.ok || !data.ok) {
-            throw new Error(data.error || ("HTTP " + resp.status));
-        }
-        savedBatches = [];          // drop the optimistic rows too
+        const newContent = kept.length ? kept.join("\n") + "\n" : "";
+        await commit(LOG_FILE, newContent, `Clear @${user.login}'s history (${removed} run${removed === 1 ? "" : "s"})`);
         historyEl.hidden = true;    // committed log lags; reopen to see fresh state
-        const n = data.removed;
-        setStatus(
-            n
-                ? `Cleared ${n} run${n === 1 ? "" : "s"} ✅ — reopen History in a moment.`
-                : "Nothing of yours to clear.",
-            "ok"
-        );
+        setStatus(`Cleared ${removed} run${removed === 1 ? "" : "s"} ✅ — reopen History in a moment.`, "ok");
     } catch (err) {
         setStatus("Failed to clear: " + err.message, "error");
     }
 });
 
+// Fetch the log as an array of non-empty JSONL lines ([] if it doesn't exist).
+async function fetchLogLines() {
+    const url = `https://raw.githubusercontent.com/${REPO}/${BRANCH}/${LOG_FILE}?t=${Date.now()}`;
+    const resp = await fetch(url, { cache: "no-store" });
+    if (resp.status === 404) return [];
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    const text = await resp.text();
+    return text.split("\n").map((l) => l.trim()).filter(Boolean);
+}
+
 async function showHistory() {
     setStatus("Loading history…");
     try {
-        const url = `https://raw.githubusercontent.com/${REPO}/${BRANCH}/${LOG_FILE}?t=${Date.now()}`;
-        const resp = await fetch(url, { cache: "no-store" });
-        if (resp.status === 404) {
-            renderHistory([]);
-            setStatus("");
-            return;
-        }
-        if (!resp.ok) throw new Error("HTTP " + resp.status);
-        const text = await resp.text();
-        const runs = text
-            .split("\n")
-            .map((l) => l.trim())
-            .filter(Boolean)
-            .map((l) => JSON.parse(l));
+        const runs = (await fetchLogLines()).map((l) => JSON.parse(l));
 
         // The committed log lags each save by a few seconds (Action + CDN). Show
         // any batches saved this session that aren't in the log yet; once the
