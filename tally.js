@@ -10,6 +10,7 @@ let count = 0;
 let timestamps = [];     // clicks accumulated since the last save (unsaved batch)
 let session = null;      // signed session JWT from the Worker
 let user = null;         // { login, name, avatar, allowed }
+let lastSaved = null;    // the most recent saved batch (for optimistic history display)
 
 const numberEl    = document.getElementById("number");
 const timestampEl = document.getElementById("timestamp");
@@ -152,6 +153,9 @@ async function save() {
             a.rel = "noopener";
             statusEl.appendChild(a);
         }
+        // Remember it so History can show it immediately, before the Action
+        // appends it to timestamps.json and raw.githubusercontent catches up.
+        lastSaved = { timestamps: timestamps.slice(), by: user ? user.login : null };
         // Start a fresh batch.
         count = 0;
         timestamps = [];
@@ -192,11 +196,30 @@ async function showHistory() {
             .map((l) => l.trim())
             .filter(Boolean)
             .map((l) => JSON.parse(l));
+
+        // The committed log lags a save by a few seconds (Action + CDN). If our
+        // last saved batch isn't in there yet, show it optimistically; once the
+        // log catches up it's already present, so we don't double-count.
+        let pending = false;
+        if (lastSaved && lastSaved.timestamps.length && !runsContain(runs, lastSaved)) {
+            runs.push(lastSaved);
+            pending = true;
+        }
         renderHistory(runs);
-        setStatus("Newly saved runs may take a moment to appear.");
+        setStatus(pending ? "Most recent run is still syncing to the log…" : "");
     } catch (err) {
         setStatus("Failed to load history: " + err.message, "error");
     }
+}
+
+// Is this batch already in the fetched log? Match on first+last timestamp.
+function runsContain(runs, batch) {
+    const a = batch.timestamps[0];
+    const b = batch.timestamps[batch.timestamps.length - 1];
+    return runs.some((r) => {
+        const ts = r.timestamps || r.countdown || [];
+        return ts[0] === a && ts[ts.length - 1] === b;
+    });
 }
 
 function renderHistory(runs) {
