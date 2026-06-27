@@ -26,7 +26,7 @@ repo's `_config.yml` Jekyll `exclude`), so the Worker source isn't served.
 | `src/index.js` | The Worker: auth routes + gated commit. |
 | `wrangler.toml` | Non-secret config (`[vars]`). |
 | `bootstrap/` | One-command setup that creates the GitHub App + deploys (see `bootstrap/README.md`). |
-| `../index.html`, `../countdown.js`, `../style.css` | The site frontend (sign-in UI + count/save/history). |
+| `../index.html`, `../tally.js`, `../style.css` | The site frontend (sign-in UI + count/save/history). |
 | `../.github/workflows/append-log.yml` | Action that appends each commit to `timestamps.json`. |
 
 ## Routes
@@ -99,7 +99,7 @@ bootstrap/setup.sh        # defaults target this repo; override OWNER/REPO/etc. 
 cd bmottershead.github.io/deploy && npx wrangler deploy
 ```
 
-The site points at the Worker via `WORKER_URL` in `../countdown.js` — update it
+The site points at the Worker via `WORKER_URL` in `../tally.js` — update it
 if your Worker URL differs.
 
 ## Test

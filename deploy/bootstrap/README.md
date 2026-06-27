@@ -56,7 +56,7 @@ bootstrap/setup.sh
 - Click the printed **install** link.
 - Delete the local secrets: `rm -rf bootstrap/.app`.
 - The site (`index.html` etc.) already points at the Worker; if your Worker URL
-  differs, update `WORKER_URL` in `countdown.js`.
+  differs, update `WORKER_URL` in `tally.js`.
 
 ## Notes
 
