@@ -1,19 +1,19 @@
-name: Append countdown to log
+name: Append timestamps to log
 
-# Runs whenever countdown.json is committed (by the Worker on reaching zero).
+# Runs whenever most-recent-timestamps.json is committed (by the Worker on Save).
 on:
   push:
     branches: [main]
     paths:
-      - countdown.json
+      - most-recent-timestamps.json
 
 # Needed to push the updated log back to the repo.
 permissions:
   contents: write
 
-# Serialize runs so concurrent countdowns can't clash on the log file.
+# Serialize runs so concurrent saves can't clash on the log file.
 concurrency:
-  group: countdown-log
+  group: timestamps-log
   cancel-in-progress: false
 
 jobs:
@@ -22,18 +22,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Append countdown.json as one JSONL line
-        run: jq -c '.' countdown.json >> countdown-log.json
+      - name: Append most-recent-timestamps.json as one JSONL line
+        run: jq -c '.' most-recent-timestamps.json >> timestamps.json
 
       - name: Commit and push the log
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add countdown-log.json
+          git add timestamps.json
           # --cached catches a brand-new (untracked) file, which plain `git diff` misses.
           if git diff --cached --quiet; then
-            echo "No change to countdown-log.json — nothing to commit."
+            echo "No change to timestamps.json — nothing to commit."
             exit 0
           fi
-          git commit -m "Append countdown run to countdown-log.json"
+          git commit -m "Append run to timestamps.json"
           git push

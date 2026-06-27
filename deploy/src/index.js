@@ -5,7 +5,7 @@
  *   GET  /auth/login     -> redirect to GitHub's OAuth authorize page
  *   GET  /auth/callback  -> exchange code, mint a signed session JWT, redirect to site
  *   GET  /auth/me        -> return the signed-in user (Bearer session) or 401
- *   POST /               -> commit countdown.json (requires a valid, allowed session)
+ *   POST /               -> commit the timestamps file (requires a valid, allowed session)
  *
  * Auth model: "Login with GitHub" via the GitHub App's user-to-server OAuth.
  * The Worker holds the client secret and signs its own session token (HS256);
@@ -153,7 +153,7 @@ async function handleCountdown(request, env, cors) {
     return json({ error: "Sign in with GitHub first." }, 401, cors);
   }
   if (!isAllowed(env, session.login)) {
-    return json({ error: `@${session.login} is not authorized to run the countdown.` }, 403, cors);
+    return json({ error: `@${session.login} is not authorized to save.` }, 403, cors);
   }
 
   let body;
@@ -162,12 +162,12 @@ async function handleCountdown(request, env, cors) {
   } catch {
     return json({ error: "invalid JSON body" }, 400, cors);
   }
-  const countdown = body && body.countdown;
-  if (!Array.isArray(countdown) || countdown.length === 0) {
-    return json({ error: "body.countdown must be a non-empty array" }, 400, cors);
+  const timestamps = body && body.timestamps;
+  if (!Array.isArray(timestamps) || timestamps.length === 0) {
+    return json({ error: "body.timestamps must be a non-empty array" }, 400, cors);
   }
-  if (!countdown.every((t) => typeof t === "string")) {
-    return json({ error: "countdown entries must be strings" }, 400, cors);
+  if (!timestamps.every((t) => typeof t === "string")) {
+    return json({ error: "timestamp entries must be strings" }, 400, cors);
   }
 
   try {
@@ -175,8 +175,8 @@ async function handleCountdown(request, env, cors) {
     const result = await commitFile(
       env,
       token,
-      { countdown, by: session.login },
-      `Countdown by @${session.login} reached zero`
+      { timestamps, by: session.login },
+      `Save timestamps by @${session.login}`
     );
     return json(
       {

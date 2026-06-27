@@ -65,11 +65,39 @@ button.link {
     text-decoration: underline;
     opacity: 0.8;
 }
+#controls {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    justify-content: center;
+}
 #status {
     font-size: 0.9rem;
     max-width: 30rem;
     min-height: 1.2em;
     opacity: 0.85;
+}
+#history {
+    width: 100%;
+    max-width: 40rem;
+    overflow-x: auto;
+}
+#history table {
+    border-collapse: collapse;
+    margin: 0 auto;
+    font-size: 0.85rem;
+    font-variant-numeric: tabular-nums;
+}
+#history th,
+#history td {
+    border: 1px solid currentColor;
+    padding: 0.3rem 0.6rem;
+    text-align: left;
+    white-space: nowrap;
+}
+#history th {
+    opacity: 0.7;
+    font-weight: 600;
 }
 #status.error {
     color: #d33;

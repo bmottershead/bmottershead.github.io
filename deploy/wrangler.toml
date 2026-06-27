@@ -7,13 +7,13 @@ compatibility_date = "2024-11-01"
 REPO_OWNER = "bmottershead"
 REPO_NAME = "bmottershead.github.io"
 REPO_BRANCH = "main"
-FILE_PATH = "countdown.json"
+FILE_PATH = "most-recent-timestamps.json"
 GITHUB_APP_ID = "4155092"
 # OAuth client id of the same GitHub App (NOT secret). Looks like "Iv23li...".
 GITHUB_CLIENT_ID = "Iv23li609lMVQIYXKRCl"
 # Where to send the browser back after login (gets #session=... appended).
 SITE_URL = "https://bmottershead.github.io"
-# Comma-separated GitHub logins allowed to run the countdown. Empty = any user.
+# Comma-separated GitHub logins allowed to save. Empty = any user.
 ALLOWED_LOGINS = "bmottershead"
 # Browser origins allowed to call the Worker (CORS).
 ALLOWED_ORIGINS = "https://bmottershead.github.io,http://localhost:8000"
