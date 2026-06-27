@@ -17,6 +17,7 @@ const timestampEl = document.getElementById("timestamp");
 const countBtn    = document.getElementById("countBtn");
 const saveBtn     = document.getElementById("saveBtn");
 const historyBtn  = document.getElementById("historyBtn");
+const clearBtn    = document.getElementById("clearBtn");
 const statusEl    = document.getElementById("status");
 const historyEl   = document.getElementById("history");
 const loginBtn    = document.getElementById("loginBtn");
@@ -90,6 +91,7 @@ function updateButtons() {
     const allowed = !!(user && user.allowed);
     countBtn.disabled = !allowed;
     saveBtn.disabled = !allowed || timestamps.length === 0;
+    clearBtn.disabled = !allowed;
     // History is always available — it reads public repo data.
 }
 
@@ -177,6 +179,40 @@ historyBtn.addEventListener("click", async () => {
         if (!ok) return;
     }
     await showHistory();
+});
+
+clearBtn.addEventListener("click", async () => {
+    if (!user || !user.allowed) return;
+    if (!confirm("Remove all of your saved runs from the history? This can't be undone.")) {
+        return;
+    }
+    setStatus("Clearing your history…");
+    try {
+        const resp = await fetch(WORKER_URL + "/clear", {
+            method: "POST",
+            headers: { Authorization: "Bearer " + session }
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (resp.status === 401 || resp.status === 403) {
+            setStatus(data.error || "Not authorized.", "error");
+            if (resp.status === 401) signOut();
+            return;
+        }
+        if (!resp.ok || !data.ok) {
+            throw new Error(data.error || ("HTTP " + resp.status));
+        }
+        savedBatches = [];          // drop the optimistic rows too
+        historyEl.hidden = true;    // committed log lags; reopen to see fresh state
+        const n = data.removed;
+        setStatus(
+            n
+                ? `Cleared ${n} run${n === 1 ? "" : "s"} ✅ — reopen History in a moment.`
+                : "Nothing of yours to clear.",
+            "ok"
+        );
+    } catch (err) {
+        setStatus("Failed to clear: " + err.message, "error");
+    }
 });
 
 async function showHistory() {

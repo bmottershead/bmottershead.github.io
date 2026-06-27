@@ -6,6 +6,7 @@
  *   GET  /auth/callback  -> exchange code, mint a signed session JWT, redirect to site
  *   GET  /auth/me        -> return the signed-in user (Bearer session) or 401
  *   POST /               -> commit the timestamps file (requires a valid, allowed session)
+ *   POST /clear          -> remove the caller's own rows from the log (allowed session)
  *
  * Auth model: "Login with GitHub" via the GitHub App's user-to-server OAuth.
  * The Worker holds the client secret and signs its own session token (HS256);
@@ -40,6 +41,9 @@ export default {
     }
     if (request.method === "POST" && path === "/") {
       return handleCountdown(request, env, cors);
+    }
+    if (request.method === "POST" && path === "/clear") {
+      return handleClear(request, env, cors);
     }
     return json({ error: "not found" }, 404, cors);
   },
@@ -193,6 +197,67 @@ async function handleCountdown(request, env, cors) {
   }
 }
 
+// ---- Clear the caller's own rows from the log -----------------------------
+
+async function handleClear(request, env, cors) {
+  const session = await sessionFromRequest(request, env);
+  if (!session) {
+    return json({ error: "Sign in with GitHub first." }, 401, cors);
+  }
+  if (!isAllowed(env, session.login)) {
+    return json({ error: `@${session.login} is not authorized.` }, 403, cors);
+  }
+
+  const path = env.LOG_FILE_PATH;
+  const login = String(session.login).toLowerCase();
+
+  try {
+    const token = await getInstallationToken(env);
+
+    // Retry on 409: the Action may append to the log between our GET and PUT.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const existing = await getFileText(env, token, path);
+      if (!existing) return json({ ok: true, removed: 0 }, 200, cors); // no log yet
+
+      const lines = existing.text.split("\n").map((l) => l.trim()).filter(Boolean);
+      const kept = lines.filter((line) => {
+        try {
+          return String(JSON.parse(line).by || "").toLowerCase() !== login;
+        } catch {
+          return true; // leave any unparseable line untouched
+        }
+      });
+      const removed = lines.length - kept.length;
+      if (removed === 0) return json({ ok: true, removed: 0 }, 200, cors);
+
+      const newContent = kept.length ? kept.join("\n") + "\n" : "";
+      const res = await putFileText(
+        env,
+        token,
+        path,
+        newContent,
+        existing.sha,
+        `Clear @${session.login}'s history (${removed} run${removed === 1 ? "" : "s"})`
+      );
+      if (res.ok) {
+        const body = await res.json().catch(() => ({}));
+        return json(
+          { ok: true, removed, commit: body.commit && body.commit.html_url },
+          200,
+          cors
+        );
+      }
+      if (res.status !== 409) {
+        return json({ ok: false, error: `PUT failed: ${res.status} ${await res.text()}` }, 502, cors);
+      }
+      // 409 => sha moved; loop and retry with a fresh read.
+    }
+    return json({ ok: false, error: "log kept changing; please try again" }, 409, cors);
+  } catch (err) {
+    return json({ ok: false, error: String(err.message || err) }, 502, cors);
+  }
+}
+
 // ---- Sessions (HS256 JWT signed with SESSION_SECRET) ----------------------
 
 async function makeSessionJwt(env, claims) {
@@ -317,6 +382,35 @@ async function importPrivateKey(pem) {
   );
 }
 
+// ---- Generic contents helpers (used by /clear) ----------------------------
+
+function ghHeaders(token) {
+  return {
+    "User-Agent": "countdown-worker",
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+    Authorization: `Bearer ${token}`,
+  };
+}
+
+// Returns { sha, text } for a repo file, or null if it doesn't exist.
+async function getFileText(env, token, path) {
+  const url = `https://api.github.com/repos/${env.REPO_OWNER}/${env.REPO_NAME}/contents/${path}?ref=${env.REPO_BRANCH}`;
+  const resp = await fetch(url, { headers: ghHeaders(token) });
+  if (resp.status === 404) return null;
+  if (!resp.ok) throw new Error(`GET ${path} failed: ${resp.status} ${await resp.text()}`);
+  const data = await resp.json();
+  return { sha: data.sha, text: base64decodeUtf8(data.content || "") };
+}
+
+// PUTs raw string content. Returns the raw Response (caller checks .ok/.status).
+function putFileText(env, token, path, contentString, sha, message) {
+  const url = `https://api.github.com/repos/${env.REPO_OWNER}/${env.REPO_NAME}/contents/${path}`;
+  const body = { message, content: base64encodeUtf8(contentString), branch: env.REPO_BRANCH };
+  if (sha) body.sha = sha;
+  return fetch(url, { method: "PUT", headers: ghHeaders(token), body: JSON.stringify(body) });
+}
+
 // ---- Commit ---------------------------------------------------------------
 
 async function commitFile(env, token, payloadObj, message) {
@@ -404,4 +498,12 @@ function base64encodeUtf8(str) {
   let s = "";
   for (const b of bytes) s += String.fromCharCode(b);
   return btoa(s);
+}
+
+function base64decodeUtf8(b64) {
+  // GitHub returns base64 with embedded newlines; atob can't handle whitespace.
+  const bin = atob(b64.replace(/\s+/g, ""));
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
 }

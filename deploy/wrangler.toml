@@ -8,6 +8,8 @@ REPO_OWNER = "bmottershead"
 REPO_NAME = "bmottershead.github.io"
 REPO_BRANCH = "main"
 FILE_PATH = "most-recent-timestamps.json"
+# Append-only log the Action writes; "Clear my history" rewrites it.
+LOG_FILE_PATH = "timestamps.json"
 GITHUB_APP_ID = "4155092"
 # OAuth client id of the same GitHub App (NOT secret). Looks like "Iv23li...".
 GITHUB_CLIENT_ID = "Iv23li609lMVQIYXKRCl"

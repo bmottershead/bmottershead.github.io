@@ -37,6 +37,7 @@ repo's `_config.yml` Jekyll `exclude`), so the Worker source isn't served.
 | `GET /auth/callback` | Exchange the code, mint a session JWT, redirect to `SITE_URL/#session=…`. |
 | `GET /auth/me` | Return the signed-in user (`Authorization: Bearer <jwt>`) or 401. |
 | `POST /` | Commit `most-recent-timestamps.json`. Requires a valid session whose login is allowed. |
+| `POST /clear` | Remove the caller's own rows from `timestamps.json`. Requires a valid, allowed session. |
 
 ## Setup
 
