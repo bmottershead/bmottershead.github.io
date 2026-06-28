@@ -35,8 +35,7 @@ the repo's `_config.yml` Jekyll `exclude`), so the Worker source isn't served.
 | `worker.js` | The Worker: auth routes + generic gated commit. |
 | `wrangler.toml` | Non-secret config (`[vars]`). |
 | `setup.sh` | One-shot: registers the GitHub App **and** deploys the Worker. |
-| `create-app.mjs` | The App-creation gadget (GitHub manifest flow) `setup.sh` drives. |
-| `app-manifest.json` | Reference shape of the App manifest (the real one is built at runtime). |
+| `create-app.mjs` | The App-creation gadget (GitHub manifest flow) `setup.sh` drives; it builds the manifest inline. |
 | `../index.html`, `../tally.js`, `../style.css` | The demo front-end (sign-in UI + count / new batch / archive). It owns the file paths/formats. |
 | `../data/<login>/timestamps.json` | Where the demo archives each user's batches (written via `/commit`). |
 
