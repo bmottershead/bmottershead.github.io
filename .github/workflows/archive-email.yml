@@ -2,16 +2,19 @@ name: Email archive confirmation
 
 # Demo CI: whenever the committer-proxy Worker commits a user's archive
 # (data/<login>/timestamps.json, on "Archive" or "Clear"), send a confirmation
-# email summarizing what was archived.
+# email summarizing what was archived — via the Resend API.
 #
 # Required repo secrets (Settings -> Secrets and variables -> Actions):
-#   MAIL_USERNAME  the sending Gmail address
-#   MAIL_PASSWORD  a Gmail App Password (needs 2FA on the account)
-#   NOTIFY_EMAIL   where to send the confirmation
+#   RESEND_API_KEY  a Resend API key (https://resend.com, send-only is fine)
+#   NOTIFY_EMAIL    where to send the confirmation
+# Optional:
+#   MAIL_FROM       verified sender address. Defaults to onboarding@resend.dev,
+#                   which Resend lets you use without verifying a domain — but
+#                   only delivers to your own Resend account email. To send
+#                   elsewhere, verify a domain and set MAIL_FROM to an address on it.
 #
-# Note: the Worker stamps commits with a GitHub noreply author email, so we
-# can't email the end user directly — hence a configured NOTIFY_EMAIL. Fine for
-# a single-user demo.
+# Note: the Worker stamps commits with a GitHub noreply author email, so the
+# recipient is a configured address rather than the end user. Fine for a demo.
 
 on:
   push:
@@ -50,25 +53,26 @@ jobs:
             echo "file=$file"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Send confirmation email
+      - name: Send confirmation email (Resend)
         if: steps.sum.outputs.skip == 'false'
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 465
-          secure: true
-          username: ${{ secrets.MAIL_USERNAME }}
-          password: ${{ secrets.MAIL_PASSWORD }}
-          from: Committer Demo <${{ secrets.MAIL_USERNAME }}>
-          to: ${{ secrets.NOTIFY_EMAIL }}
-          subject: "Archived: @${{ steps.sum.outputs.by }} — ${{ steps.sum.outputs.clicks }} click(s)"
-          body: |
-            Your tally data was archived to the repo.
-
-            User:    @${{ steps.sum.outputs.by }}
-            File:    ${{ steps.sum.outputs.file }}
-            Batches: ${{ steps.sum.outputs.batches }}
-            Clicks:  ${{ steps.sum.outputs.clicks }}
-            Commit:  https://github.com/${{ github.repository }}/commit/${{ github.sha }}
-
-            — committer-proxy demo
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          MAIL_FROM: ${{ secrets.MAIL_FROM || 'onboarding@resend.dev' }}
+          NOTIFY_EMAIL: ${{ secrets.NOTIFY_EMAIL }}
+          BY: ${{ steps.sum.outputs.by }}
+          FILE: ${{ steps.sum.outputs.file }}
+          BATCHES: ${{ steps.sum.outputs.batches }}
+          CLICKS: ${{ steps.sum.outputs.clicks }}
+          COMMIT_URL: https://github.com/${{ github.repository }}/commit/${{ github.sha }}
+        run: |
+          subject="Archived: @${BY} — ${CLICKS} click(s)"
+          body=$(printf 'Your tally data was archived to the repo.\n\nUser:    @%s\nFile:    %s\nBatches: %s\nClicks:  %s\nCommit:  %s\n\n— committer-proxy demo\n' \
+            "$BY" "$FILE" "$BATCHES" "$CLICKS" "$COMMIT_URL")
+          payload=$(jq -n \
+            --arg from "$MAIL_FROM" --arg to "$NOTIFY_EMAIL" \
+            --arg subject "$subject" --arg text "$body" \
+            '{from: $from, to: [$to], subject: $subject, text: $text}')
+          curl -fsS -X POST https://api.resend.com/emails \
+            -H "Authorization: Bearer ${RESEND_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "$payload"
