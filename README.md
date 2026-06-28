@@ -6,4 +6,4 @@ the OAuth and commit:
   + Static Frontend (hosted on GitHub Pages)
   + Backend OAuth Proxy  (Cloudflare Worker and GitHub App)
   + GitHub Content Store (GitHub git repository)
-  + (planned) Commit triggering CI (GitHub Action)
+  + Commit triggering CI (GitHub Action emails an archive confirmation)

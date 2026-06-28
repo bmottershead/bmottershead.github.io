@@ -1,0 +1,74 @@
+name: Email archive confirmation
+
+# Demo CI: whenever the committer-proxy Worker commits a user's archive
+# (data/<login>/timestamps.json, on "Archive" or "Clear"), send a confirmation
+# email summarizing what was archived.
+#
+# Required repo secrets (Settings -> Secrets and variables -> Actions):
+#   MAIL_USERNAME  the sending Gmail address
+#   MAIL_PASSWORD  a Gmail App Password (needs 2FA on the account)
+#   NOTIFY_EMAIL   where to send the confirmation
+#
+# Note: the Worker stamps commits with a GitHub noreply author email, so we
+# can't email the end user directly — hence a configured NOTIFY_EMAIL. Fine for
+# a single-user demo.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "data/**/timestamps.json"
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2 # need the parent commit to diff against
+
+      - name: Summarize the archive that changed
+        id: sum
+        run: |
+          file=$(git diff --name-only HEAD^ HEAD -- 'data/**/timestamps.json' | head -1)
+          if [ -z "$file" ] || [ ! -f "$file" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "No archive file in this push — skipping."
+            exit 0
+          fi
+          by=$(jq -r '.by // "unknown"' "$file")
+          batches=$(jq '(.batches // []) | length' "$file")
+          clicks=$(jq '[(.batches // [])[] | length] | add // 0' "$file")
+          {
+            echo "skip=false"
+            echo "by=$by"
+            echo "batches=$batches"
+            echo "clicks=$clicks"
+            echo "file=$file"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Send confirmation email
+        if: steps.sum.outputs.skip == 'false'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          from: Committer Demo <${{ secrets.MAIL_USERNAME }}>
+          to: ${{ secrets.NOTIFY_EMAIL }}
+          subject: "Archived: @${{ steps.sum.outputs.by }} — ${{ steps.sum.outputs.clicks }} click(s)"
+          body: |
+            Your tally data was archived to the repo.
+
+            User:    @${{ steps.sum.outputs.by }}
+            File:    ${{ steps.sum.outputs.file }}
+            Batches: ${{ steps.sum.outputs.batches }}
+            Clicks:  ${{ steps.sum.outputs.clicks }}
+            Commit:  https://github.com/${{ github.repository }}/commit/${{ github.sha }}
+
+            — committer-proxy demo
