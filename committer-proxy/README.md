@@ -1,16 +1,19 @@
-# GitHub OAuth + commit proxy (`deploy/`)
+# committer-proxy — GitHub OAuth + commit proxy
 
-A generic, **content-blind** Cloudflare Worker: it handles **"Login with
-GitHub"** and lets an authorized user commit **arbitrary files** to one
-configured repo on behalf of a **GitHub App**. It knows nothing about any
-particular application's file format — the caller supplies the `path`,
-`content`, and commit `message`. The Worker verifies the session, mints a
-short-lived installation token scoped to `contents:write` on the one configured
-repo, stamps the commit author with the authenticated user's identity, and does
-the commit. **No credentials ever reach the browser.**
+A self-contained **OAuth + commit proxy**: one **GitHub App** plus one
+**Cloudflare Worker** that backs it. The Worker handles **"Login with GitHub"**
+and lets an authorized user commit **arbitrary files** to one configured repo.
+It's **content-blind** — the browser supplies the `path`, `content`, and commit
+`message`; the Worker verifies the session, mints a short-lived installation
+token scoped to `contents:write` on the one repo, stamps the commit author with
+the authenticated user, and commits. **No credentials ever reach the browser.**
 
-Any static site can use it as its backend; the tally-counter demo in this repo
-is just one such app.
+**One App, one proxy.** The Worker is the App's confidential **OAuth client** and
+sole backend: the App's Client Secret and Private Key live only in the Worker's
+Cloudflare secret store. The "content-blind" genericness is toward **front-ends**
+— any static site can POST to the Worker; the tally-counter demo in this repo is
+one such front-end. (If you wanted a second, independently-revocable proxy you'd
+register a *separate* GitHub App for it, not share this one's keys.)
 
 ```
                        sign in
@@ -22,17 +25,19 @@ browser ──POST /commit {path,content,message} + Bearer <jwt>──▶ Worker
                                                                 (gated on ALLOWED_LOGINS)
 ```
 
-This directory is **excluded from the published site** (`deploy` is in the
-repo's `_config.yml` Jekyll `exclude`), so the Worker source isn't served.
+This directory is **excluded from the published site** (`committer-proxy` is in
+the repo's `_config.yml` Jekyll `exclude`), so the Worker source isn't served.
 
 ## Where things live
 
 | Path | Role |
 |------|------|
-| `src/index.js` | The Worker: auth routes + generic gated commit. |
+| `worker.js` | The Worker: auth routes + generic gated commit. |
 | `wrangler.toml` | Non-secret config (`[vars]`). |
-| `bootstrap/` | One-command setup that creates the GitHub App + deploys (see `bootstrap/README.md`). |
-| `../index.html`, `../tally.js`, `../style.css` | The demo app frontend (sign-in UI + count/save/history). It owns the file paths/formats. |
+| `setup.sh` | One-shot: registers the GitHub App **and** deploys the Worker. |
+| `create-app.mjs` | The App-creation gadget (GitHub manifest flow) `setup.sh` drives. |
+| `app-manifest.json` | Reference shape of the App manifest (the real one is built at runtime). |
+| `../index.html`, `../tally.js`, `../style.css` | The demo front-end (sign-in UI + count/save/history). It owns the file paths/formats. |
 | `../.github/workflows/append-log.yml` | Demo Action: appends each `most-recent-timestamps.json` commit to `timestamps.json`. |
 
 ## Routes
@@ -46,21 +51,34 @@ repo's `_config.yml` Jekyll `exclude`), so the Worker source isn't served.
 
 ## Setup
 
-### Recommended: the bootstrap script
+### Recommended: `setup.sh`
 
-Creates the GitHub App from a manifest, uploads all secrets, and deploys — the
-only manual actions are two browser clicks. See **[`bootstrap/README.md`](bootstrap/README.md)**:
+One command creates the GitHub App **and** deploys the Worker. The only manual
+actions are two browser clicks — "Create GitHub App" and (at the end) "Install".
 
 ```sh
-cd bmottershead.github.io/deploy
-bootstrap/setup.sh        # defaults target this repo; override OWNER/REPO/etc. for your own
+cd bmottershead.github.io/committer-proxy
+
+# Defaults target bmottershead/bmottershead.github.io. Override for your own.
+# WORKER_CALLBACK is this Worker's deployed /auth/callback URL.
+OWNER=you REPO=you.github.io SITE_URL=https://you.github.io \
+WORKER_CALLBACK=https://<worker>.<your-subdomain>.workers.dev/auth/callback \
+  ./setup.sh
 ```
+
+It registers the App, writes the credentials to a transient `.app/`, converts
+the key to PKCS#8, fills in `wrangler.toml`, uploads the three secrets, deploys,
+and then **deletes `.app/`** — the secrets now live only in Cloudflare. (On
+failure it keeps `.app/` so you can retry without re-minting the App.)
+
+**Prereqs:** `node` (18+), `openssl`, `wrangler` (via `npx`); logged in to
+Cloudflare (`npx wrangler whoami`) and to GitHub in your browser.
 
 ### Manual alternative
 
 1. Register a GitHub App (Settings → Developer settings → GitHub Apps): webhook
    off, **Contents: Read and write**, **Callback URL**
-   `https://countdown.<your-subdomain>.workers.dev/auth/callback`. Generate a
+   `https://<worker>.<your-subdomain>.workers.dev/auth/callback`. Generate a
    **private key** and a **client secret**; note the **App ID** and **Client ID**.
 2. Convert the key to PKCS#8 (WebCrypto needs it):
    ```sh
@@ -98,10 +116,12 @@ bootstrap/setup.sh        # defaults target this repo; override OWNER/REPO/etc. 
 | `GITHUB_CLIENT_SECRET` | OAuth client secret of the App. |
 | `SESSION_SECRET` | Random key for signing session JWTs (HS256). |
 
-## Deploy
+## Re-deploy
+
+`setup.sh` is only needed to create the App. To redeploy code or config changes:
 
 ```sh
-cd bmottershead.github.io/deploy && npx wrangler deploy
+cd bmottershead.github.io/committer-proxy && npx wrangler deploy
 ```
 
 The site points at the Worker via `WORKER_URL` in `../tally.js` — update it

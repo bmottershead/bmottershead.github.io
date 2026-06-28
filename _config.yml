@@ -1,6 +1,6 @@
 # GitHub Pages (Jekyll) build config.
-# Keep README and the Worker source out of the published site.
+# Keep README and the GitHub App / Worker tooling out of the published site.
 # (plans/ is gitignored entirely.)
 exclude:
   - README.md
-  - deploy
+  - committer-proxy

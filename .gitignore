@@ -3,5 +3,5 @@ plans/
 
 # Belt-and-suspenders: never commit secrets or Worker local state.
 *.pem
-deploy/bootstrap/.app/
-deploy/.wrangler/
+committer-proxy/.app/
+committer-proxy/.wrangler/

@@ -1,7 +1,7 @@
 # Local secrets / build artifacts — never commit these.
-bootstrap/.app/
+# (setup.sh removes .app/ and .wrangler/ itself; these are belt-and-suspenders.)
+.app/
 *.pem
-private-key-pkcs8.pem
 node_modules/
 .dev.vars
 .wrangler/

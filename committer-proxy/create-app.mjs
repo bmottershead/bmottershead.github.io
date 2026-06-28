@@ -4,8 +4,8 @@
 // Flow: serve a one-button page -> you click -> GitHub confirm -> redirect back
 // here with ?code -> POST /app-manifests/{code}/conversions -> save creds.
 //
-// Driven by env vars (set by setup.sh): OWNER, REPO, APP_NAME, SITE_URL,
-// WORKER_CALLBACK, ORG (optional). Writes into bootstrap/.app/.
+// Driven by env vars (set by setup.sh): APP_NAME, SITE_URL, CALLBACK_URL,
+// OWNER, REPO, ORG (optional). Writes credentials into committer-proxy/.app/.
 
 import http from "node:http";
 import { writeFileSync, mkdirSync } from "node:fs";
@@ -22,12 +22,17 @@ if (typeof fetch !== "function") {
 const PORT = Number(process.env.BOOTSTRAP_PORT || 8765);
 const OWNER = process.env.OWNER || "bmottershead";
 const REPO = process.env.REPO || `${OWNER}.github.io`;
-const APP_NAME = process.env.APP_NAME || "countdown-committer";
+const APP_NAME = process.env.APP_NAME || "committer-proxy";
 const SITE_URL = process.env.SITE_URL || `https://${OWNER}.github.io`;
-const WORKER_CALLBACK =
-  process.env.WORKER_CALLBACK ||
-  "https://countdown.riverscape.workers.dev/auth/callback";
+const CALLBACK_URL = process.env.CALLBACK_URL || "";
 const ORG = process.env.ORG || "";
+
+if (!CALLBACK_URL) {
+  console.error(
+    "CALLBACK_URL is required — the OAuth client's callback URL to register on the App."
+  );
+  process.exit(1);
+}
 
 const APPDIR = join(dirname(fileURLToPath(import.meta.url)), ".app");
 mkdirSync(APPDIR, { recursive: true });
@@ -39,7 +44,7 @@ const manifest = {
   url: SITE_URL,
   hook_attributes: { active: false },
   redirect_url: `http://localhost:${PORT}/callback`,
-  callback_urls: [WORKER_CALLBACK],
+  callback_urls: [CALLBACK_URL],
   public: false,
   default_permissions: { contents: "write" },
   default_events: [],
@@ -80,7 +85,7 @@ const server = http.createServer(async (req, res) => {
           method: "POST",
           headers: {
             Accept: "application/vnd.github+json",
-            "User-Agent": "countdown-bootstrap",
+            "User-Agent": "committer-app-setup",
             "X-GitHub-Api-Version": "2022-11-28",
           },
         }
@@ -133,9 +138,9 @@ server.listen(PORT, () => {
 
 function formPage(actionUrl, manifestObj) {
   const json = JSON.stringify(manifestObj);
-  return `<!doctype html><html><head><meta charset="utf-8"><title>Create Countdown App</title></head>
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Create GitHub App</title></head>
 <body style="font-family:system-ui;max-width:40rem;margin:3rem auto;line-height:1.5">
-  <h1>Create the Countdown GitHub App</h1>
+  <h1>Create the ${escapeHtml(manifestObj.name)} GitHub App</h1>
   <p>This registers a GitHub App named <b>${escapeHtml(manifestObj.name)}</b> with
      <b>Contents: write</b> on your repo and the OAuth callback for login.
      You'll confirm on GitHub, then land back here.</p>
@@ -153,7 +158,7 @@ function successPage(app, installUrl) {
   return `<!doctype html><html><head><meta charset="utf-8"><title>App created</title></head>
 <body style="font-family:system-ui;max-width:40rem;margin:3rem auto;line-height:1.5">
   <h1>✅ Created ${escapeHtml(app.slug)}</h1>
-  <p>Credentials saved locally. The setup script will now configure and deploy the Worker.</p>
+  <p>Credentials saved locally. Configure your OAuth client with them, then install the App.</p>
   <p>The last step is installing the app on your repo — the script prints this link,
      or use it now:</p>
   <p><a href="${installUrl}">${installUrl}</a></p>

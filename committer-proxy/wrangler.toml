@@ -1,5 +1,5 @@
 name = "countdown"
-main = "src/index.js"
+main = "worker.js"
 compatibility_date = "2024-11-01"
 
 # Non-secret config.
