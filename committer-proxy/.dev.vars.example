@@ -1,0 +1,6 @@
+# Secrets the "Deploy to Cloudflare" flow prompts for (dotenv format).
+# This .example file is committed; the real .dev.vars is gitignored.
+# For local dev: copy to .dev.vars and fill in. Never commit real values.
+GITHUB_APP_PRIVATE_KEY=
+GITHUB_CLIENT_SECRET=
+SESSION_SECRET=

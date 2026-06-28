@@ -55,20 +55,23 @@ the repo's `_config.yml` Jekyll `exclude`), so the Worker source isn't served.
 One command creates the GitHub App **and** deploys the Worker. The only manual
 actions are two browser clicks — "Create GitHub App" and (at the end) "Install".
 
+**Config lives in `wrangler.toml`.** First edit its `[vars]` (`REPO_OWNER`,
+`REPO_NAME`, `SITE_URL`, `ALLOWED_LOGINS`, `ALLOWED_ORIGINS`) for your repo —
+leave `GITHUB_APP_ID` / `GITHUB_CLIENT_ID`, which setup fills in. Then:
+
 ```sh
 cd bmottershead.github.io/committer-proxy
 
-# Defaults target bmottershead/bmottershead.github.io. Override for your own.
-# WORKER_CALLBACK is this Worker's deployed /auth/callback URL.
-OWNER=you REPO=you.github.io SITE_URL=https://you.github.io \
-WORKER_CALLBACK=https://<worker>.<your-subdomain>.workers.dev/auth/callback \
-  ./setup.sh
+# WORKER_CALLBACK is this Worker's deployed /auth/callback URL — the one input
+# that isn't a wrangler var (it depends on your workers.dev subdomain).
+WORKER_CALLBACK=https://<worker>.<your-subdomain>.workers.dev/auth/callback ./setup.sh
 ```
 
 It registers the App, writes the credentials to a transient `.app/`, converts
-the key to PKCS#8, fills in `wrangler.toml`, uploads the three secrets, deploys,
-and then **deletes `.app/`** — the secrets now live only in Cloudflare. (On
-failure it keeps `.app/` so you can retry without re-minting the App.)
+the key to PKCS#8, writes the App's two IDs into `wrangler.toml`, uploads the
+three secrets, deploys, and then **deletes `.app/`** — the secrets now live only
+in Cloudflare. (On failure it keeps `.app/` so you can retry without re-minting
+the App.) Optional env: `APP_NAME` (default `committer-proxy`), `ORG`.
 
 **Prereqs:** `node` (18+), `openssl`, `wrangler` (via `npx`); logged in to
 Cloudflare (`npx wrangler whoami`) and to GitHub in your browser.
@@ -102,7 +105,7 @@ Cloudflare (`npx wrangler whoami`) and to GitHub in your browser.
 | Var | Meaning |
 |---|---|
 | `REPO_OWNER`, `REPO_NAME`, `REPO_BRANCH` | Target repo + default branch (the only repo the Worker can write to). |
-| `GITHUB_APP_ID`, `GITHUB_CLIENT_ID` | App identifiers (Client ID is public by design). |
+| `GITHUB_APP_ID`, `GITHUB_CLIENT_ID` | App identifiers (both public). **Filled by `setup.sh`** on App creation — you don't set these by hand. |
 | `SITE_URL` | Where login redirects back to. |
 | `ALLOWED_LOGINS` | Comma-separated GitHub logins allowed to commit. Empty = any signed-in user. |
 | `ALLOWED_ORIGINS` | Browser origins allowed to call the Worker (CORS). |

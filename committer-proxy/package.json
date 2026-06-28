@@ -1,0 +1,45 @@
+{
+  "name": "committer-proxy",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Generic GitHub OAuth + commit proxy (Cloudflare Worker).",
+  "cloudflare": {
+    "label": "Committer Proxy",
+    "products": ["Workers"],
+    "bindings": {
+      "GITHUB_APP_PRIVATE_KEY": {
+        "description": "Your GitHub App's private key, PKCS#8 PEM. Paste the whole -----BEGIN PRIVATE KEY----- block (from the setup page)."
+      },
+      "GITHUB_CLIENT_SECRET": {
+        "description": "Your GitHub App's OAuth client secret (from the setup page)."
+      },
+      "SESSION_SECRET": {
+        "description": "A long random string used to sign session JWTs. Use the value generated on the setup page."
+      },
+      "GITHUB_APP_ID": {
+        "description": "Your GitHub App's numeric App ID (from the setup page)."
+      },
+      "GITHUB_CLIENT_ID": {
+        "description": "Your GitHub App's OAuth Client ID, e.g. Iv23li... (from the setup page)."
+      },
+      "REPO_OWNER": {
+        "description": "Your GitHub username — owner of the repo the Worker commits to."
+      },
+      "REPO_NAME": {
+        "description": "The repo the Worker commits to, e.g. <you>.github.io."
+      },
+      "REPO_BRANCH": {
+        "description": "Default branch to commit to (usually main)."
+      },
+      "SITE_URL": {
+        "description": "Your site URL that login redirects back to, e.g. https://<you>.github.io."
+      },
+      "ALLOWED_LOGINS": {
+        "description": "Comma-separated GitHub logins allowed to commit. Usually just your username."
+      },
+      "ALLOWED_ORIGINS": {
+        "description": "Comma-separated browser origins allowed to call the Worker (CORS), e.g. https://<you>.github.io,http://localhost:8000."
+      }
+    }
+  }
+}

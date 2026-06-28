@@ -2,13 +2,16 @@ name = "countdown"
 main = "worker.js"
 compatibility_date = "2024-11-01"
 
-# Non-secret config.
+# Non-secret config — the single source of truth. Edit these for your repo.
+# GITHUB_APP_ID and GITHUB_CLIENT_ID are the exception: setup.sh fills them in
+# when it creates the App (you don't know them until then). Everything else you
+# set yourself.
 [vars]
 REPO_OWNER = "bmottershead"
 REPO_NAME = "bmottershead.github.io"
 REPO_BRANCH = "main"
+# Filled by setup.sh on App creation (both public, not secret).
 GITHUB_APP_ID = "4155092"
-# OAuth client id of the same GitHub App (NOT secret). Looks like "Iv23li...".
 GITHUB_CLIENT_ID = "Iv23li609lMVQIYXKRCl"
 # Where to send the browser back after login (gets #session=... appended).
 SITE_URL = "https://bmottershead.github.io"

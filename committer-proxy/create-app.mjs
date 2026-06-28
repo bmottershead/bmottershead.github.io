@@ -4,8 +4,8 @@
 // Flow: serve a one-button page -> you click -> GitHub confirm -> redirect back
 // here with ?code -> POST /app-manifests/{code}/conversions -> save creds.
 //
-// Driven by env vars (set by setup.sh): APP_NAME, SITE_URL, CALLBACK_URL,
-// OWNER, REPO, ORG (optional). Writes credentials into committer-proxy/.app/.
+// Driven by env vars (set by setup.sh): APP_NAME, SITE_URL, CALLBACK_URL, ORG.
+// (OWNER/REPO just supply defaults.) Writes credentials into committer-proxy/.app/.
 
 import http from "node:http";
 import { writeFileSync, mkdirSync } from "node:fs";
