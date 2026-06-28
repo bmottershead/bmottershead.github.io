@@ -172,7 +172,7 @@ $("createBtn").addEventListener("click", () => {
   const manifest = {
     name,
     url: siteUrl || here,
-    hook_attributes: { active: false },
+    hook_attributes: { url: siteUrl || here, active: false },
     redirect_url: here,
     callback_urls: [callbackUrl],
     public: false,

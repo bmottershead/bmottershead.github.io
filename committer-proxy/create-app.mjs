@@ -42,7 +42,7 @@ const state = randomBytes(8).toString("hex");
 const manifest = {
   name: APP_NAME,
   url: SITE_URL,
-  hook_attributes: { active: false },
+  hook_attributes: { url: SITE_URL, active: false },
   redirect_url: `http://localhost:${PORT}/callback`,
   callback_urls: [CALLBACK_URL],
   public: false,
