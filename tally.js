@@ -1,12 +1,12 @@
 const WORKER_URL = "https://countdown.riverscape.workers.dev";
 const SESSION_KEY = "cd_session";
+const BATCHES_KEY = "cd_batches";   // local working store: array of batches
 
-// Repo files this app owns. The Worker is content-blind — these paths and
-// their formats are entirely the app's concern.
+// Repo the Worker commits to. The proxy is content-blind — this path and its
+// format are entirely the app's concern. Each user archives to their own file.
 const REPO = "bmottershead/bmottershead.github.io";
 const BRANCH = "main";
-const SAVE_FILE = "most-recent-timestamps.json"; // the Action appends this to the log
-const LOG_FILE = "timestamps.json";              // append-only history (read via raw)
+const dataPath = (login) => `data/${login}/timestamps.json`;
 
 // Commit a file through the proxy. Returns the parsed response.
 // Throws on non-OK; signs out on 401 so the caller can stop.
@@ -26,17 +26,15 @@ async function commit(path, content, message) {
     return data;
 }
 
-let count = 0;
-let timestamps = [];     // clicks accumulated since the last save (unsaved batch)
 let session = null;      // signed session JWT from the Worker
 let user = null;         // { login, name, avatar, allowed }
-let savedBatches = [];   // batches saved this session (for optimistic history display)
+let batches = [];        // [[iso, iso, …], …]; the current batch is the last one
 
 const numberEl    = document.getElementById("number");
 const timestampEl = document.getElementById("timestamp");
 const countBtn    = document.getElementById("countBtn");
-const saveBtn     = document.getElementById("saveBtn");
-const historyBtn  = document.getElementById("historyBtn");
+const newBatchBtn = document.getElementById("newBatchBtn");
+const archiveBtn  = document.getElementById("archiveBtn");
 const clearBtn    = document.getElementById("clearBtn");
 const statusEl    = document.getElementById("status");
 const historyEl   = document.getElementById("history");
@@ -56,11 +54,31 @@ function esc(s) {
         ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 }
 
+// ---- Local store ----------------------------------------------------------
+
+function loadBatches() {
+    try {
+        const v = JSON.parse(localStorage.getItem(BATCHES_KEY));
+        return Array.isArray(v) ? v : [];
+    } catch {
+        return [];
+    }
+}
+
+function persistBatches() {
+    localStorage.setItem(BATCHES_KEY, JSON.stringify(batches));
+}
+
+const currentBatch = () => (batches.length ? batches[batches.length - 1] : null);
+const currentCount = () => (currentBatch() ? currentBatch().length : 0);
+const totalClicks  = () => batches.reduce((n, b) => n + b.length, 0);
+
 // ---- Auth -----------------------------------------------------------------
 
 // The Worker redirects back to <site>/#session=<jwt> (or #error=...).
+// Returns true if this load is a fresh sign-in (so we pull the archive).
 function captureSessionFromHash() {
-    if (location.hash.length < 2) return;
+    if (location.hash.length < 2) return false;
     const params = new URLSearchParams(location.hash.slice(1));
     const s = params.get("session");
     const err = params.get("error");
@@ -69,12 +87,14 @@ function captureSessionFromHash() {
     if (s) {
         session = s;
         localStorage.setItem(SESSION_KEY, s);
+        return true;
     }
+    return false;
 }
 
-async function loadSession() {
+async function loadSession(justLoggedIn) {
     session = session || localStorage.getItem(SESSION_KEY);
-    if (!session) { renderAuth(); return; }
+    if (!session) { batches = []; renderAuth(); render(); return; }
     try {
         const resp = await fetch(WORKER_URL + "/auth/me", {
             headers: { Authorization: "Bearer " + session }
@@ -85,7 +105,37 @@ async function loadSession() {
         signOut();
         return;
     }
+    // Fresh sign-in overwrites the local store with the archive; a plain reload
+    // keeps whatever's in localStorage (multi-device divergence is out of scope).
+    if (justLoggedIn) {
+        await syncFromArchive();
+    } else {
+        batches = loadBatches();
+    }
     renderAuth();
+    render();
+}
+
+// Pull data/<login>/timestamps.json from the public repo into the local store.
+async function syncFromArchive() {
+    setStatus("Syncing your archive…");
+    try {
+        const url = `https://raw.githubusercontent.com/${REPO}/${BRANCH}/${dataPath(user.login)}?t=${Date.now()}`;
+        const resp = await fetch(url, { cache: "no-store" });
+        if (resp.status === 404) {
+            batches = [];                       // no archive yet
+        } else if (resp.ok) {
+            const archive = await resp.json().catch(() => ({}));
+            batches = Array.isArray(archive.batches) ? archive.batches : [];
+        } else {
+            throw new Error("HTTP " + resp.status);
+        }
+        persistBatches();
+        setStatus(`Synced ${totalClicks()} click${totalClicks() === 1 ? "" : "s"} from your archive.`, "ok");
+    } catch (err) {
+        batches = loadBatches();                // fall back to whatever's local
+        setStatus("Couldn't read your archive (" + err.message + ") — using local data.", "error");
+    }
 }
 
 function renderAuth() {
@@ -94,25 +144,14 @@ function renderAuth() {
         userBox.hidden = false;
         avatarEl.src = user.avatar || "";
         userNameEl.textContent = "@" + user.login;
-        if (user.allowed) {
-            setStatus("Signed in as @" + user.login + " — start counting.", "ok");
-        } else {
-            setStatus("Signed in as @" + user.login + ", but not authorized to count or save.", "error");
+        if (!user.allowed) {
+            setStatus("Signed in as @" + user.login + ", but not authorized to count.", "error");
         }
     } else {
         loginBtn.hidden = false;
         userBox.hidden = true;
-        setStatus("Sign in with GitHub to count and save. (History is public.)");
+        setStatus("Sign in with GitHub to count. Your data lives at data/<you>/timestamps.json.");
     }
-    updateButtons();
-}
-
-function updateButtons() {
-    const allowed = !!(user && user.allowed);
-    countBtn.disabled = !allowed;
-    saveBtn.disabled = !allowed || timestamps.length === 0;
-    clearBtn.disabled = !allowed;
-    // History is always available — it reads public repo data.
 }
 
 loginBtn.addEventListener("click", () => {
@@ -125,34 +164,42 @@ function signOut() {
     localStorage.removeItem(SESSION_KEY);
     session = null;
     user = null;
+    batches = [];
     renderAuth();
+    render();
 }
 
 // ---- Counting -------------------------------------------------------------
 
 countBtn.addEventListener("click", () => {
     if (!user || !user.allowed) return;
-    count += 1;
-    const ts = new Date().toISOString();
-    timestamps.push(ts);
-    numberEl.textContent = count;
-    timestampEl.textContent = ts;
-    updateButtons();
+    if (!batches.length) batches.push([]);
+    currentBatch().push(new Date().toISOString());
+    persistBatches();
+    render();
 });
 
-// ---- Save -----------------------------------------------------------------
+newBatchBtn.addEventListener("click", () => {
+    if (!user || !user.allowed) return;
+    if (currentCount() === 0) return;           // current batch already fresh
+    batches.push([]);
+    persistBatches();
+    render();
+});
 
-saveBtn.addEventListener("click", () => { save(); });
+// ---- Archive / Clear ------------------------------------------------------
 
-// Returns true on success (or when there's nothing to save), false on failure.
-async function save() {
-    if (timestamps.length === 0) return true;
-    setStatus("Saving timestamps…");
+archiveBtn.addEventListener("click", async () => {
+    if (!user || !user.allowed || totalClicks() === 0) return;
+    setStatus("Archiving…");
     try {
-        const by = user ? user.login : null;
-        const content = JSON.stringify({ timestamps, by }, null, 2) + "\n";
-        const data = await commit(SAVE_FILE, content, `Save timestamps by @${by}`);
-        setStatus("Saved ✅ ", "ok");
+        const content = JSON.stringify({ by: user.login, batches }, null, 2) + "\n";
+        const data = await commit(
+            dataPath(user.login),
+            content,
+            `Archive @${user.login}'s timestamps (${totalClicks()} clicks, ${batches.length} batch${batches.length === 1 ? "" : "es"})`
+        );
+        setStatus("Archived ✅ ", "ok");
         if (data.commit) {
             const a = document.createElement("a");
             a.href = data.commit;
@@ -161,141 +208,72 @@ async function save() {
             a.rel = "noopener";
             statusEl.appendChild(a);
         }
-        // Remember it so History can show it immediately, before the Action
-        // appends it to timestamps.json and raw.githubusercontent catches up.
-        savedBatches.push({ timestamps: timestamps.slice(), by });
-        // Start a fresh batch.
-        count = 0;
-        timestamps = [];
-        numberEl.textContent = count;
-        updateButtons();
-        return true;
     } catch (err) {
-        setStatus("Failed to save: " + err.message, "error");
-        return false;
+        setStatus("Failed to archive: " + err.message, "error");
     }
-}
-
-// ---- History --------------------------------------------------------------
-
-historyBtn.addEventListener("click", async () => {
-    // Save any unsaved timestamps first.
-    if (timestamps.length > 0) {
-        const ok = await save();
-        if (!ok) return;
-    }
-    await showHistory();
 });
 
 clearBtn.addEventListener("click", async () => {
     if (!user || !user.allowed) return;
-    if (!confirm("Remove all of your saved runs from the history? This can't be undone.")) {
+    if (!confirm("Clear all your batches here and empty your archive in the repo? This can't be undone.")) {
         return;
     }
-    setStatus("Clearing your history…");
+    setStatus("Clearing…");
     try {
-        const me = user.login.toLowerCase();
-        // Read the current log, drop our own rows, commit the rest. (The proxy
-        // is content-blind, so this filtering is the app's job.)
-        const lines = await fetchLogLines();
-        const kept = lines.filter((line) => {
-            try {
-                return String(JSON.parse(line).by || "").toLowerCase() !== me;
-            } catch {
-                return true; // leave anything unparseable untouched
-            }
-        });
-        const removed = lines.length - kept.length;
-        savedBatches = [];          // drop the optimistic rows too
-
-        if (removed === 0) {
-            setStatus("Nothing of yours to clear.", "ok");
-            return;
-        }
-        const newContent = kept.length ? kept.join("\n") + "\n" : "";
-        await commit(LOG_FILE, newContent, `Clear @${user.login}'s history (${removed} run${removed === 1 ? "" : "s"})`);
-        historyEl.hidden = true;    // committed log lags; reopen to see fresh state
-        setStatus(`Cleared ${removed} run${removed === 1 ? "" : "s"} ✅ — reopen History in a moment.`, "ok");
+        batches = [];
+        persistBatches();
+        render();
+        const content = JSON.stringify({ by: user.login, batches: [] }, null, 2) + "\n";
+        await commit(dataPath(user.login), content, `Clear @${user.login}'s archive`);
+        setStatus("Cleared ✅", "ok");
     } catch (err) {
-        setStatus("Failed to clear: " + err.message, "error");
+        setStatus("Cleared locally, but failed to empty the archive: " + err.message, "error");
     }
 });
 
-// Fetch the log as an array of non-empty JSONL lines ([] if it doesn't exist).
-async function fetchLogLines() {
-    const url = `https://raw.githubusercontent.com/${REPO}/${BRANCH}/${LOG_FILE}?t=${Date.now()}`;
-    const resp = await fetch(url, { cache: "no-store" });
-    if (resp.status === 404) return [];
-    if (!resp.ok) throw new Error("HTTP " + resp.status);
-    const text = await resp.text();
-    return text.split("\n").map((l) => l.trim()).filter(Boolean);
+// ---- Render ---------------------------------------------------------------
+
+function render() {
+    numberEl.textContent = currentCount();
+    const cur = currentBatch();
+    timestampEl.textContent = (cur && cur.length) ? cur[cur.length - 1] : " ";
+    renderBatches();
+    updateButtons();
 }
 
-async function showHistory() {
-    setStatus("Loading history…");
-    try {
-        const runs = (await fetchLogLines()).map((l) => JSON.parse(l));
-
-        // The committed log lags each save by a few seconds (Action + CDN). Show
-        // any batches saved this session that aren't in the log yet; once the
-        // log catches up they're already present, so we don't double-count.
-        let pending = 0;
-        for (const batch of savedBatches) {
-            if (batch.timestamps.length && !runsContain(runs, batch)) {
-                runs.push(batch);
-                pending++;
-            }
-        }
-        renderHistory(runs);
-        setStatus(
-            pending
-                ? `${pending} recent run${pending > 1 ? "s are" : " is"} still syncing to the log…`
-                : ""
-        );
-    } catch (err) {
-        setStatus("Failed to load history: " + err.message, "error");
-    }
+function updateButtons() {
+    const allowed = !!(user && user.allowed);
+    countBtn.disabled    = !allowed;
+    newBatchBtn.disabled = !allowed || currentCount() === 0;
+    archiveBtn.disabled  = !allowed || totalClicks() === 0;
+    clearBtn.disabled    = !allowed || totalClicks() === 0;
 }
 
-// Is this batch already in the fetched log? Match on first+last timestamp.
-function runsContain(runs, batch) {
-    const a = batch.timestamps[0];
-    const b = batch.timestamps[batch.timestamps.length - 1];
-    return runs.some((r) => {
-        const ts = r.timestamps || r.countdown || [];
-        return ts[0] === a && ts[ts.length - 1] === b;
-    });
-}
-
-function renderHistory(runs) {
-    if (!runs.length) {
-        historyEl.innerHTML = "<p>No saved runs yet.</p>";
-        historyEl.hidden = false;
+function renderBatches() {
+    if (!totalClicks()) {
+        historyEl.innerHTML = "<p>No batches yet.</p>";
         return;
     }
-    const rows = runs.map((r, i) => {
-        // Older records used the "countdown" key; newer ones use "timestamps".
-        const ts = r.timestamps || r.countdown || [];
-        const by = r.by ? "@" + esc(r.by) : "—";
+    const last = batches.length - 1;
+    const rows = batches.map((b, i) => {
+        const mark = i === last ? " (current)" : "";
         return `<tr>
-            <td>${i + 1}</td>
-            <td>${by}</td>
-            <td>${ts.length}</td>
-            <td>${esc(ts[0] || "")}</td>
-            <td>${esc(ts[ts.length - 1] || "")}</td>
+            <td>${i + 1}${mark}</td>
+            <td>${b.length}</td>
+            <td>${esc(b[0] || "")}</td>
+            <td>${esc(b[b.length - 1] || "")}</td>
         </tr>`;
     }).join("");
     historyEl.innerHTML = `
         <table>
             <thead>
-                <tr><th>#</th><th>By</th><th>Clicks</th><th>First</th><th>Last</th></tr>
+                <tr><th>Batch</th><th>Clicks</th><th>First</th><th>Last</th></tr>
             </thead>
             <tbody>${rows}</tbody>
         </table>`;
-    historyEl.hidden = false;
 }
 
 // ---- Init -----------------------------------------------------------------
 
-captureSessionFromHash();
-loadSession();
+const justLoggedIn = captureSessionFromHash();
+loadSession(justLoggedIn);

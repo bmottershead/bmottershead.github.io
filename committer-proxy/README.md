@@ -37,8 +37,8 @@ the repo's `_config.yml` Jekyll `exclude`), so the Worker source isn't served.
 | `setup.sh` | One-shot: registers the GitHub App **and** deploys the Worker. |
 | `create-app.mjs` | The App-creation gadget (GitHub manifest flow) `setup.sh` drives. |
 | `app-manifest.json` | Reference shape of the App manifest (the real one is built at runtime). |
-| `../index.html`, `../tally.js`, `../style.css` | The demo front-end (sign-in UI + count/save/history). It owns the file paths/formats. |
-| `../.github/workflows/append-log.yml` | Demo Action: appends each `most-recent-timestamps.json` commit to `timestamps.json`. |
+| `../index.html`, `../tally.js`, `../style.css` | The demo front-end (sign-in UI + count / new batch / archive). It owns the file paths/formats. |
+| `../data/<login>/timestamps.json` | Where the demo archives each user's batches (written via `/commit`). |
 
 ## Routes
 
