@@ -1,7 +1,9 @@
 *~
 plans/
 
-# Belt-and-suspenders: never commit secrets or Worker local state.
+# Secrets / build artifacts — never commit these (committer-proxy/ Worker state).
 *.pem
-committer-proxy/.app/
-committer-proxy/.wrangler/
+.app/
+.wrangler/
+node_modules/
+.dev.vars

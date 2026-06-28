@@ -1,7 +1,0 @@
-# Local secrets / build artifacts — never commit these.
-# (setup.sh removes .app/ and .wrangler/ itself; these are belt-and-suspenders.)
-.app/
-*.pem
-node_modules/
-.dev.vars
-.wrangler/
