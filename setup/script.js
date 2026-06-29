@@ -1,14 +1,8 @@
-import { pkcs1ToPkcs8Pem } from "pem.js";
 
 const STATE_KEY = "cp_setup_state";
 const $ = (id)=>document.getElementById(id);
 
 $("createBtn").addEventListener("click", () => {
-    const randHex = crypto.getRandomValues(new Uint8Array(16));
-    const state = [...randHex].map(b => b.toString(16).padStart(2, "0")).join("");
-
-    sessionStorage.setItem(STATE_KEY, state);
-
     const input = document.createElement("input");
     const here = location.origin + location.pathname;
 
@@ -20,16 +14,19 @@ $("createBtn").addEventListener("click", () => {
 	redirect_url: here,
 	callback_urls: [""],
 	public: false,
-	default_permissions: {  contents: "write" },
+	default_permissions: {contents:"write"},
 	default_events: []
     });
 
     const form = document.createElement("form");
+    const randHex = crypto.getRandomValues(new Uint8Array(16));
+    const state = [...randHex].map(b => b.toString(16).padStart(2, "0")).join("");
 
     form.method = "POST";
     form.action =`https://github.com/settings/apps/new?state=${state}`;
     form.appendChild(input);
     document.body.appendChild(form);
+    sessionStorage.setItem(STATE_KEY, state);
     form.submit();
 });
 
