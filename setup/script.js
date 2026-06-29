@@ -31,13 +31,6 @@ $("createBtn").addEventListener("click", () => {
 });
 
 
-// ---- Init ----
-(function init() {
-    const params = new URLSearchParams(location.search);
-    if (params.get("code")) 
-	handleCallback(params);
-})();
-
 async function handleCallback(params) {
     history.replaceState(null, "", location.pathname);
     setStatus("Received callback");
@@ -46,7 +39,25 @@ async function handleCallback(params) {
     if (expectedState && state && expectedState !== state) {
 	setStatus("Security check failed (state mismatch). Please start over.", "error");
 	return;
-    }
+    } else {
+	const resp = await fetch("https://github.com{code}/conversions", {
+	    method: 'POST',
+	    headers: {
+		'Accept': 'application/vnd.github+json',
+		'User-Agent': 'Proxy-Committer-Setup'
+	    }
+	});
+	if (!resp.ok)
+	    setStatus('In callback, failed to get credentials');
+	else {
+	    const {id, client_id, client_secret, webhook_secret, pem} = resp.json();
+	    console.log("APP_ID=",id);
+	    console.log("CLIENT_ID=", client_id);
+	    console.log("CLIENT_SECRET=", client_secret);
+	    console.log("WEBHOOK_SECREAT=", webhook_secret);
+	    console.log("PEM=", pem);
+	}
+    }	
 }
 
 function setStatus(msg, kind) {
@@ -54,3 +65,11 @@ function setStatus(msg, kind) {
     s.textContent = msg || " ";
     s.className = kind || "";
 }
+
+(function init() {
+    const params = new URLSearchParams(location.search);
+    if (params.get("code")) 
+	handleCallback(params);
+    /* fall through to manifest form */
+})();
+
