@@ -1,260 +1,72 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Deploy your own click-tally site</title>
-  <style>
-    :root { color-scheme: light dark; }
-    body {
-      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-      line-height: 1.5; margin: 0; padding: 2rem 1rem;
-    }
-    main { max-width: 44rem; margin: 0 auto; }
-    h1 { font-size: 1.6rem; }
-    h2 { font-size: 1.15rem; margin-top: 2rem; }
-    section { margin-top: 1.5rem; }
-    label { display: block; margin: 0.75rem 0; font-size: 0.95rem; }
-    input[type=text] {
-      display: block; width: 100%; box-sizing: border-box; margin-top: 0.25rem;
-      font-size: 1rem; padding: 0.45rem 0.6rem; border-radius: 6px;
-      border: 1px solid currentColor; background: transparent; color: inherit;
-    }
-    button, a.deploy {
-      font-size: 1rem; padding: 0.55rem 1.2rem; border-radius: 8px;
-      border: 1px solid currentColor; background: transparent; color: inherit;
-      cursor: pointer; text-decoration: none; display: inline-block;
-    }
-    button.primary { font-size: 1.1rem; }
-    button:disabled { opacity: 0.4; cursor: default; }
-    .field { margin: 0.75rem 0; }
-    .field .row { display: flex; gap: 0.5rem; align-items: flex-start; }
-    .field label { margin: 0 0 0.2rem; font-weight: 600; }
-    .field .hint { font-size: 0.82rem; opacity: 0.75; margin: 0.1rem 0 0.3rem; }
-    .val {
-      flex: 1; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 0.82rem; padding: 0.4rem 0.5rem; border-radius: 6px;
-      border: 1px solid currentColor; background: rgba(127,127,127,0.08);
-      white-space: pre; overflow-x: auto;
-    }
-    textarea.val { width: 100%; box-sizing: border-box; height: 7rem; white-space: pre; }
-    .copy { font-size: 0.8rem; padding: 0.3rem 0.7rem; flex: 0 0 auto; }
-    .warn { border-left: 3px solid #c80; padding: 0.5rem 0.8rem; background: rgba(200,140,0,0.08); }
-    .note { font-size: 0.88rem; opacity: 0.8; }
-    #status { margin-top: 1rem; min-height: 1.2em; font-size: 0.9rem; }
-    #status.error { color: #d33; }
-    #status.ok { color: #2a8; }
-    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-    ol { padding-left: 1.2rem; }
-    li { margin: 0.4rem 0; }
-  </style>
-</head>
-<body>
-<main>
-  <h1>Deploy your own click-tally site</h1>
-  <p class="note">
-    This sets up your <em>own</em> copy: a GitHub App in your GitHub account and
-    a Cloudflare Worker in your Cloudflare account. Nothing is created in anyone
-    else's account — each step runs under <em>your</em> logins.
-  </p>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="style.css" />
+    <title>Deploy your own click-tally site</title>
+  </head>
+  <body>
+    <main>
+      <h1>Deploy click-tally site</h1>
+      <section id="createStep">
+	<label>App name
+	  <input type="text" id="appName" value="committer-proxy">
+	</label>
+	<label>Your site URL
+	  <input type="text" id="siteUrl" placeholder="https://YOUR-USERNAME.github.io">
+	</label>
+	<details>
+	  <summary class="note">Advanced (optional)</summary>
+	  <label>Create under organization
+            <input type="text" id="org" placeholder="">
+	  </label>
+	  <label>OAuth callback URL
+            <input type="text" id="callbackUrl" placeholder="https://YOUR-WORKER.workers.dev/auth/callback">
+	  </label>
+	</details>
+	<p><button class="primary" id="createBtn">Create GitHub App</button></p>
+      </section>
 
-  <!-- Step 1 -->
-  <section id="createStep">
-    <h2>Step 1 — Create your GitHub App</h2>
-    <p class="note">
-      Creates the App under whichever account you're signed into on GitHub.
-      You'll confirm on GitHub, then land back here with your credentials.
-    </p>
-    <label>App name <span class="note">(must be globally unique on GitHub)</span>
-      <input type="text" id="appName" value="committer-proxy">
-    </label>
-    <label>Your site URL <span class="note">(where login returns to)</span>
-      <input type="text" id="siteUrl" placeholder="https://YOUR-USERNAME.github.io">
-    </label>
-    <details>
-      <summary class="note">Advanced (optional)</summary>
-      <label>Create under organization <span class="note">(blank = your personal account)</span>
-        <input type="text" id="org" placeholder="">
-      </label>
-      <label>OAuth callback URL <span class="note">(your Worker's /auth/callback — you can fix this after deploying)</span>
-        <input type="text" id="callbackUrl" placeholder="https://YOUR-WORKER.workers.dev/auth/callback">
-      </label>
-    </details>
-    <p><button class="primary" id="createBtn">Create GitHub App</button></p>
-  </section>
+      <section id="resultStep" hidden>
+	<div id="creds"></div>
 
-  <!-- Step 2+ (after redirect) -->
-  <section id="resultStep" hidden>
-    <h2>Step 2 — Your App credentials</h2>
-    <p class="warn"><strong>Shown once.</strong> Copy these now — this page stores
-      nothing and can't show them again. (You can regenerate the key/secret later
-      in your App's settings if needed.)</p>
-    <div id="creds"></div>
+	<ul class="note">
+	  <li>
+	    <code>GITHUB_APP_ID</code>,
+	    <code>GITHUB_CLIENT_ID</code> — from above
+	  </li>
+	  <li><code>REPO_OWNER</code> — your GitHub username</li>
+	  <li>
+	    <code>REPO_NAME</code> — e.g.
+	    <code>YOUR-USERNAME.github.io</code>
+	  </li>
+	  <li>
+	    <code>SITE_URL</code>,
+	    <code>ALLOWED_ORIGINS</code> — your site URL;
+	    <code>ALLOWED_LOGINS</code> — your username
+	  </li>
+	</ul>
+	<p>
+	  <a class="deploy" id="deployBtn" target="_blank" rel="noopener"
+              href="https://deploy.workers.cloudflare.com/?url=https://github.com/bmottershead/bmottershead.github.io/tree/main/committer-proxy">
+	    Deploy to Cloudflare
+	  </a>
+	</p>
 
-    <h2>Step 3 — Deploy the Worker to your Cloudflare account</h2>
-    <p class="note">Click below, sign into <em>your</em> Cloudflare, and when prompted
-      paste the values above. You'll also set these variables:</p>
-    <ul class="note">
-      <li><code>GITHUB_APP_ID</code>, <code>GITHUB_CLIENT_ID</code> — from above</li>
-      <li><code>REPO_OWNER</code> — your GitHub username</li>
-      <li><code>REPO_NAME</code> — e.g. <code>YOUR-USERNAME.github.io</code></li>
-      <li><code>SITE_URL</code>, <code>ALLOWED_ORIGINS</code> — your site URL; <code>ALLOWED_LOGINS</code> — your username</li>
-    </ul>
-    <p><a class="deploy" id="deployBtn" target="_blank" rel="noopener"
-          href="https://deploy.workers.cloudflare.com/?url=https://github.com/bmottershead/bmottershead.github.io/tree/main/committer-proxy">
-      Deploy to Cloudflare</a></p>
+	<h2>Step 4 — Finish</h2>
+	<ol class="note">
+	  <li>After deploy, copy your Worker's URL and set your App's <strong>Callback URL</strong>
+            to <code>&lt;worker-url&gt;/auth/callback</code> (App settings → General).</li>
+	  <li>Install the App on your repo:
+	    <a id="installLink" href="#" target="_blank" rel="noopener">Install</a>.
+	  </li>
+	  <li>Point your site's front-end at your Worker URL and you're live.</li>
+	</ol>
+      </section>
 
-    <h2>Step 4 — Finish</h2>
-    <ol class="note">
-      <li>After deploy, copy your Worker's URL and set your App's <strong>Callback URL</strong>
-        to <code>&lt;worker-url&gt;/auth/callback</code> (App settings → General).</li>
-      <li>Install the App on your repo: <a id="installLink" href="#" target="_blank" rel="noopener">Install</a>.</li>
-      <li>Point your site's front-end at your Worker URL and you're live.</li>
-    </ol>
-  </section>
-
-  <div id="status">&nbsp;</div>
-</main>
-
-<script>
-const STATE_KEY = "cp_setup_state";
-
-const $ = (id) => document.getElementById(id);
-function setStatus(msg, kind) { const s = $("status"); s.textContent = msg || " "; s.className = kind || ""; }
-function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c])); }
-
-function randHex(n) {
-  const a = new Uint8Array(n); crypto.getRandomValues(a);
-  return [...a].map(b => b.toString(16).padStart(2, "0")).join("");
-}
-function genSessionSecret() {
-  const a = new Uint8Array(32); crypto.getRandomValues(a);
-  let s = ""; for (const b of a) s += String.fromCharCode(b);
-  return btoa(s);
-}
-
-// ---- PKCS#1 -> PKCS#8 (GitHub issues PKCS#1; the Worker's WebCrypto wants PKCS#8) ----
-function pemToDer(pem) {
-  const b64 = pem.replace(/-----BEGIN [^-]+-----/, "").replace(/-----END [^-]+-----/, "").replace(/\s+/g, "");
-  const bin = atob(b64); const der = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) der[i] = bin.charCodeAt(i);
-  return der;
-}
-function derLen(n) {
-  if (n < 0x80) return [n];
-  const out = []; let v = n;
-  while (v > 0) { out.unshift(v & 0xff); v = Math.floor(v / 256); }
-  return [0x80 | out.length, ...out];
-}
-function pkcs1ToPkcs8Pem(pkcs1Pem) {
-  if (/BEGIN PRIVATE KEY/.test(pkcs1Pem)) return pkcs1Pem.trim() + "\n"; // already PKCS#8
-  const pkcs1 = pemToDer(pkcs1Pem);
-  const algId = [0x30,0x0d,0x06,0x09,0x2a,0x86,0x48,0x86,0xf7,0x0d,0x01,0x01,0x01,0x05,0x00];
-  const octet = [0x04, ...derLen(pkcs1.length), ...pkcs1];
-  const body = [0x02,0x01,0x00, ...algId, ...octet];
-  const der = new Uint8Array([0x30, ...derLen(body.length), ...body]);
-  let bin = ""; for (const b of der) bin += String.fromCharCode(b);
-  const b64 = btoa(bin).match(/.{1,64}/g).join("\n");
-  return `-----BEGIN PRIVATE KEY-----\n${b64}\n-----END PRIVATE KEY-----\n`;
-}
-
-// ---- Step 1: build + submit the manifest form ----
-$("createBtn").addEventListener("click", () => {
-  const name = $("appName").value.trim();
-  if (!name) { setStatus("Enter an App name.", "error"); return; }
-  const siteUrl = $("siteUrl").value.trim();
-  const org = $("org").value.trim();
-  const callbackUrl = $("callbackUrl").value.trim() || "https://example.workers.dev/auth/callback";
-  const here = location.origin + location.pathname;
-  const state = randHex(16);
-  sessionStorage.setItem(STATE_KEY, state);
-
-  const manifest = {
-    name,
-    url: siteUrl || here,
-    hook_attributes: { url: siteUrl || here, active: false },
-    redirect_url: here,
-    callback_urls: [callbackUrl],
-    public: false,
-    default_permissions: { contents: "write" },
-    default_events: []
-  };
-  const action = org
-    ? `https://github.com/organizations/${encodeURIComponent(org)}/settings/apps/new?state=${state}`
-    : `https://github.com/settings/apps/new?state=${state}`;
-
-  const form = document.createElement("form");
-  form.method = "POST"; form.action = action;
-  const input = document.createElement("input");
-  input.type = "hidden"; input.name = "manifest"; input.value = JSON.stringify(manifest);
-  form.appendChild(input); document.body.appendChild(form);
-  form.submit();
-});
-
-// ---- Step 2: handle the redirect back (?code) ----
-function field(label, hint, value, opts = {}) {
-  const big = opts.big;
-  const tag = big ? `<textarea class="val" readonly>${esc(value)}</textarea>` : `<div class="val">${esc(value)}</div>`;
-  return `<div class="field">
-    <label>${esc(label)}</label>${hint ? `<p class="hint">${esc(hint)}</p>` : ""}
-    <div class="row">${tag}<button class="copy" data-copy="${esc(value)}">Copy</button></div>
-  </div>`;
-}
-
-function renderResult(app) {
-  const pkcs8 = pkcs1ToPkcs8Pem(app.pem);
-  const sessionSecret = genSessionSecret();
-  $("creds").innerHTML = [
-    field("GITHUB_APP_ID", "Worker var — your App's numeric ID", String(app.id)),
-    field("GITHUB_CLIENT_ID", "Worker var — OAuth client id", app.client_id),
-    field("GITHUB_CLIENT_SECRET", "Worker secret — OAuth client secret", app.client_secret),
-    field("GITHUB_APP_PRIVATE_KEY", "Worker secret — converted to PKCS#8 for you; paste the whole block", pkcs8, { big: true }),
-    field("SESSION_SECRET", "Worker secret — freshly generated random key", sessionSecret),
-  ].join("");
-  $("installLink").href = app.html_url + "/installations/new";
-  $("createStep").hidden = true;
-  $("resultStep").hidden = false;
-  setStatus(`App "${app.slug}" created in your account. Copy the values, then deploy.`, "ok");
-}
-
-$("creds")?.addEventListener("click", (e) => {
-  const btn = e.target.closest(".copy"); if (!btn) return;
-  navigator.clipboard.writeText(btn.dataset.copy).then(
-    () => { btn.textContent = "Copied"; setTimeout(() => btn.textContent = "Copy", 1200); },
-    () => setStatus("Couldn't copy — select and copy manually.", "error")
-  );
-});
-
-async function handleCallback(code, state) {
-  const expected = sessionStorage.getItem(STATE_KEY);
-  if (expected && state && expected !== state) {
-    setStatus("Security check failed (state mismatch). Please start over.", "error"); return;
-  }
-  setStatus("Finalizing your App with GitHub…");
-  try {
-    const resp = await fetch(`https://api.github.com/app-manifests/${encodeURIComponent(code)}/conversions`, {
-      method: "POST",
-      headers: { "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" }
-    });
-    if (!resp.ok) throw new Error("GitHub returned HTTP " + resp.status);
-    renderResult(await resp.json());
-  } catch (e) {
-    setStatus("Couldn't finish App creation in the browser: " + e.message +
-      ". If this is a CORS/network error, the conversion call needs a small server-side proxy.", "error");
-  }
-}
-
-// ---- Init ----
-(function init() {
-  const params = new URLSearchParams(location.search);
-  const code = params.get("code"), state = params.get("state");
-  if (code) {
-    // Drop the code from the URL so a refresh doesn't retry a spent code.
-    history.replaceState(null, "", location.pathname);
-    $("createStep").hidden = true;
-    handleCallback(code, state);
-  }
-})();
-</script>
-</body>
+      <div id="status">&nbsp;</div>
+    </main>
+    <script typ"module" src="script.js"></script>
+  </body>
 </html>
