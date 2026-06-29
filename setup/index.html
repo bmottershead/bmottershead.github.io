@@ -4,69 +4,18 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="style.css" />
-    <title>Deploy your own click-tally site</title>
+    <title>Committer Proxy Setup</title>
   </head>
   <body>
     <main>
-      <h1>Deploy click-tally site</h1>
-      <section id="createStep">
-	<label>App name
-	  <input type="text" id="appName" value="committer-proxy">
-	</label>
-	<label>Your site URL
-	  <input type="text" id="siteUrl" placeholder="https://YOUR-USERNAME.github.io">
-	</label>
-	<details>
-	  <summary class="note">Advanced (optional)</summary>
-	  <label>Create under organization
-            <input type="text" id="org" placeholder="">
-	  </label>
-	  <label>OAuth callback URL
-            <input type="text" id="callbackUrl" placeholder="https://YOUR-WORKER.workers.dev/auth/callback">
-	  </label>
-	</details>
-	<p><button class="primary" id="createBtn">Create GitHub App</button></p>
-      </section>
-
-      <section id="resultStep" hidden>
-	<div id="creds"></div>
-
-	<ul class="note">
-	  <li>
-	    <code>GITHUB_APP_ID</code>,
-	    <code>GITHUB_CLIENT_ID</code> — from above
-	  </li>
-	  <li><code>REPO_OWNER</code> — your GitHub username</li>
-	  <li>
-	    <code>REPO_NAME</code> — e.g.
-	    <code>YOUR-USERNAME.github.io</code>
-	  </li>
-	  <li>
-	    <code>SITE_URL</code>,
-	    <code>ALLOWED_ORIGINS</code> — your site URL;
-	    <code>ALLOWED_LOGINS</code> — your username
-	  </li>
-	</ul>
-	<p>
-	  <a class="deploy" id="deployBtn" target="_blank" rel="noopener"
-              href="https://deploy.workers.cloudflare.com/?url=https://github.com/bmottershead/bmottershead.github.io/tree/main/committer-proxy">
-	    Deploy to Cloudflare
-	  </a>
-	</p>
-
-	<h2>Step 4 — Finish</h2>
-	<ol class="note">
-	  <li>After deploy, copy your Worker's URL and set your App's <strong>Callback URL</strong>
-            to <code>&lt;worker-url&gt;/auth/callback</code> (App settings → General).</li>
-	  <li>Install the App on your repo:
-	    <a id="installLink" href="#" target="_blank" rel="noopener">Install</a>.
-	  </li>
-	  <li>Point your site's front-end at your Worker URL and you're live.</li>
-	</ol>
-      </section>
-
+      <label>App name
+	<input type="text" id="appName" value="committer-proxy">
+      </label>
+      <button class="primary" id="createBtn">
+	Create GitHub App
+      </button>
       <div id="status">&nbsp;</div>
     </main>
-    <script typ"module" src="script.js"></script>
+    <script type="module" src="script.js"></script>
   </body>
 </html>
