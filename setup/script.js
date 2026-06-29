@@ -52,7 +52,7 @@ async function handleCallback(params) {
 	if (!resp.ok)
 	    setStatus('In callback, failed to get credentials');
 	else {
-	    const {id, client_id, client_secret, webhook_secret, pem} = resp.json();
+	    const {id, client_id, client_secret, webhook_secret, pem} = await resp.json();
 	    console.log("APP_ID=",id);
 	    console.log("CLIENT_ID=", client_id);
 	    console.log("CLIENT_SECRET=", client_secret);
