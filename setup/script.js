@@ -40,7 +40,9 @@ async function handleCallback(params) {
 	setStatus("Security check failed (state mismatch). Please start over.", "error");
 	return;
     } else {
-	const resp = await fetch("https://github.com{code}/conversions", {
+	const code = params.get("code");
+	console.log("code=", code);
+	const resp = await fetch(`https://github.com{code}/conversions`, {
 	    method: 'POST',
 	    headers: {
 		'Accept': 'application/vnd.github+json',
