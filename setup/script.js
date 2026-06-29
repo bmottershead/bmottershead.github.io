@@ -15,7 +15,7 @@ $("createBtn").addEventListener("click", () => {
     input.type = "hidden";
     input.name = "manifest";
     input.value = JSON.stringify({
-	name: ${"appName").value.trim()},
+	name: ${"appName"}.value.trim(),
 	url: here,
 	redirect_url: here,
 	callback_urls: [""],
