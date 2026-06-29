@@ -43,7 +43,7 @@ async function handleCallback(params) {
     setStatus("Received callback");
     const expectedState = sessionStorage.getItem(STATE_KEY);
     const state = params.get("state")
-    if (expectedState && state && expected !== state) {
+    if (expectedState && state && expectedState !== state) {
 	setStatus("Security check failed (state mismatch). Please start over.", "error");
 	return;
     }
