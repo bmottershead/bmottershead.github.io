@@ -50,31 +50,41 @@ the repo's `_config.yml` Jekyll `exclude`), so the Worker source isn't served.
 
 ## Setup
 
-### Recommended: `setup.sh`
+### Recommended: `setup.sh` (fork → one command)
 
-One command creates the GitHub App **and** deploys the Worker. The only manual
-actions are two browser clicks — "Create GitHub App" and (at the end) "Install".
-
-**Config lives in `wrangler.toml`.** First edit its `[vars]` (`REPO_OWNER`,
-`REPO_NAME`, `SITE_URL`, `ALLOWED_LOGINS`, `ALLOWED_ORIGINS`) for your repo —
-leave `GITHUB_APP_ID` / `GITHUB_CLIENT_ID`, which setup fills in. Then:
+Fork `bmottershead.github.io`, clone your fork, then:
 
 ```sh
-cd bmottershead.github.io/committer-proxy
-
-# WORKER_CALLBACK is this Worker's deployed /auth/callback URL — the one input
-# that isn't a wrangler var (it depends on your workers.dev subdomain).
-WORKER_CALLBACK=https://<worker>.<your-subdomain>.workers.dev/auth/callback ./setup.sh
+cd <your-fork>/committer-proxy
+./setup.sh
 ```
 
-It registers the App, writes the credentials to a transient `.app/`, converts
-the key to PKCS#8, writes the App's two IDs into `wrangler.toml`, uploads the
-three secrets, deploys, and then **deletes `.app/`** — the secrets now live only
-in Cloudflare. (On failure it keeps `.app/` so you can retry without re-minting
-the App.) Optional env: `APP_NAME` (default `committer-proxy`), `ORG`.
+That's it. The script **figures out your repo from the git remote** (owner, repo,
+Pages URL, allowed login, worker name — no `wrangler.toml` editing), then:
 
-**Prereqs:** `node` (18+), `openssl`, `wrangler` (via `npx`); logged in to
-Cloudflare (`npx wrangler whoami`) and to GitHub in your browser.
+1. deploys the Worker once to **discover its `workers.dev` URL** (so the App's
+   OAuth callback is correct from the start — no chicken-and-egg);
+2. **creates your GitHub App** — one browser click, "Create";
+3. converts the key to PKCS#8, writes the App's two public IDs into
+   `wrangler.toml`, and **pipes the three secrets to Cloudflare** (no secret is
+   ever pasted);
+4. re-deploys, points `tally.js`'s `WORKER_URL` at your Worker, and commits +
+   pushes that to your fork;
+5. enables **Pages + Actions** on the fork (via `gh` if present), and prints the
+   **Install** link — one browser click to finish.
+
+On success it deletes the transient `.app/` dir, so the secrets live only in
+Cloudflare. On failure it keeps `.app/` so a re-run won't re-mint the App.
+
+**The only thing you might paste is a Cloudflare API token, once** — and only if
+you are *not* already `wrangler login`'d. Set `CF_API_TOKEN` (scope
+*Workers Scripts: Edit*) or run `npx wrangler login` beforehand.
+
+**Prereqs:** `node` 18+, `openssl`, `npx` (wrangler), `git`. Optional: `gh` (to
+auto-enable Pages/Actions; otherwise the script prints the two toggles).
+
+**Optional env overrides:** `APP_NAME`, `WORKER_NAME`, `ORG`, `CF_API_TOKEN`,
+`SITE_URL`, `WORKER_URL`.
 
 ### Manual alternative
 
