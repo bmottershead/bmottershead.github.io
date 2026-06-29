@@ -34,14 +34,12 @@ $("createBtn").addEventListener("click", () => {
 // ---- Init ----
 (function init() {
     const params = new URLSearchParams(location.search);
-    if (params.get("code")) {
-	history.replaceState(null, "", location.pathname);
-	$("createStep").hidden = true;
+    if (params.get("code")) 
 	handleCallback(params);
-    }
 })();
 
 async function handleCallback(params) {
+    history.replaceState(null, "", location.pathname);
     setStatus("Received callback");
     const expectedState = sessionStorage.getItem(STATE_KEY);
     const state = params.get("state")
