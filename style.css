@@ -88,8 +88,7 @@ button.link {
     font-size: 0.85rem;
     font-variant-numeric: tabular-nums;
 }
-#history th,
-#history td {
+#history th, #history td {
     border: 1px solid currentColor;
     padding: 0.3rem 0.6rem;
     text-align: left;
