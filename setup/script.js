@@ -42,7 +42,7 @@ async function handleCallback(params) {
     } else {
 	const code = params.get("code");
 	console.log("code=", code);
-	const resp = await fetch(`https://github.com{code}/conversions`, {
+	const resp = await fetch(`https://api.github.com/app-manifests/${code}/conversions`, {
 	    method: 'POST',
 	    headers: {
 		'Accept': 'application/vnd.github+json',
