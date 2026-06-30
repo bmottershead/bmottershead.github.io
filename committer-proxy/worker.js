@@ -10,7 +10,12 @@
  *   GET  /auth/login     -> redirect to GitHub's OAuth authorize page
  *   GET  /auth/callback  -> exchange code, mint a signed session JWT, redirect to site
  *   GET  /auth/me        -> return the signed-in user (Bearer session) or 401
+ *   GET  /installed      -> is the App installed on ?owner=&repo= (public read)
  *   POST /commit         -> commit a file (requires a valid, allowed session)
+ *
+ * Modes: single-tenant (default) commits to the one repo in [vars]. Multi-tenant
+ * (MULTI_TENANT=true) is the shared-operator model — one Worker + one public App;
+ * each user commits to their OWN repo (owner === login), under data/<login>/.
  *
  * Auth model: "Login with GitHub" via the GitHub App's user-to-server OAuth.
  * The Worker holds the client secret and signs its own session token (HS256);
@@ -26,6 +31,33 @@
 
 const SESSION_TTL_SECONDS = 7 * 24 * 60 * 60; // 7 days
 const STATE_COOKIE = "cd_state";
+const RETURN_COOKIE = "cd_return";
+
+// Single-tenant (default): commits go to the one repo in [vars]. Multi-tenant
+// (MULTI_TENANT=true): the operator runs ONE Worker + ONE public App; each
+// signed-in user commits to their OWN repo (gated on owner === login), under a
+// data/<login>/ path prefix. See docs/PLAN-shared.md.
+function multiTenant(env) {
+  const v = String(env.MULTI_TENANT || "").toLowerCase();
+  return v === "1" || v === "true" || v === "yes";
+}
+
+// Accept only github.io subdomains (and localhost for dev) as OAuth return
+// targets, stripped to origin+path — prevents open-redirect via ?site=.
+function validatedReturn(raw) {
+  if (!raw) return null;
+  let u;
+  try {
+    u = new URL(raw);
+  } catch {
+    return null;
+  }
+  const host = u.hostname.toLowerCase();
+  const local = host === "localhost" || host === "127.0.0.1";
+  const okHost = /^[a-z0-9-]+\.github\.io$/.test(host) || local;
+  const okScheme = u.protocol === "https:" || (u.protocol === "http:" && local);
+  return okHost && okScheme ? u.origin + u.pathname : null;
+}
 
 export default {
   async fetch(request, env) {
@@ -45,6 +77,9 @@ export default {
     if (request.method === "GET" && path === "/auth/me") {
       return handleMe(request, env, cors);
     }
+    if (request.method === "GET" && path === "/installed") {
+      return handleInstalled(request, env, cors);
+    }
     if (request.method === "POST" && path === "/commit") {
       return handleCommit(request, env, cors);
     }
@@ -62,14 +97,24 @@ function handleLogin(request, env) {
   authUrl.searchParams.set("redirect_uri", `${url.origin}/auth/callback`);
   authUrl.searchParams.set("state", state);
 
-  return new Response(null, {
-    status: 302,
-    headers: {
-      Location: authUrl.toString(),
-      // SameSite=Lax so it survives GitHub's top-level redirect back here.
-      "Set-Cookie": `${STATE_COOKIE}=${state}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=600`,
-    },
-  });
+  // SameSite=Lax so the cookies survive GitHub's top-level redirect back here.
+  const headers = new Headers({ Location: authUrl.toString() });
+  headers.append(
+    "Set-Cookie",
+    `${STATE_COOKIE}=${state}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=600`
+  );
+  // Multi-tenant: remember which (validated) site to send the browser back to,
+  // since SITE_URL can't be one fixed value when many forks share us.
+  if (multiTenant(env)) {
+    const ret = validatedReturn(url.searchParams.get("site"));
+    if (ret) {
+      headers.append(
+        "Set-Cookie",
+        `${RETURN_COOKIE}=${encodeURIComponent(ret)}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=600`
+      );
+    }
+  }
+  return new Response(null, { status: 302, headers });
 }
 
 // ---- OAuth: callback ------------------------------------------------------
@@ -79,10 +124,16 @@ async function handleCallback(request, env) {
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
   const cookies = parseCookies(request.headers.get("Cookie"));
-  const clearState = `${STATE_COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`;
+  const clearState = [
+    `${STATE_COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`,
+    `${RETURN_COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`,
+  ];
+  const returnTarget = multiTenant(env)
+    ? validatedReturn(cookies[RETURN_COOKIE] && decodeURIComponent(cookies[RETURN_COOKIE]))
+    : null;
 
   if (!code || !state || state !== cookies[STATE_COOKIE]) {
-    return redirectToSite(env, { error: "bad_state" }, clearState);
+    return redirectToSite(env, { error: "bad_state" }, clearState, returnTarget);
   }
 
   // Exchange the code for a user access token (server-to-server, holds secret).
@@ -102,7 +153,7 @@ async function handleCallback(request, env) {
   });
   const tok = await tokResp.json().catch(() => ({}));
   if (!tok.access_token) {
-    return redirectToSite(env, { error: "oauth_failed" }, clearState);
+    return redirectToSite(env, { error: "oauth_failed" }, clearState, returnTarget);
   }
 
   // Identify the user.
@@ -114,7 +165,7 @@ async function handleCallback(request, env) {
     },
   });
   if (!userResp.ok) {
-    return redirectToSite(env, { error: "user_lookup_failed" }, clearState);
+    return redirectToSite(env, { error: "user_lookup_failed" }, clearState, returnTarget);
   }
   const user = await userResp.json();
 
@@ -124,15 +175,46 @@ async function handleCallback(request, env) {
     name: user.name || user.login,
     avatar: user.avatar_url,
   });
-  return redirectToSite(env, { session }, clearState);
+  return redirectToSite(env, { session }, clearState, returnTarget);
 }
 
-function redirectToSite(env, params, clearCookie) {
+function redirectToSite(env, params, clearCookies, returnTarget) {
   const frag = new URLSearchParams(params).toString();
-  return new Response(null, {
-    status: 302,
-    headers: { Location: `${env.SITE_URL}/#${frag}`, "Set-Cookie": clearCookie },
-  });
+  const base = returnTarget || env.SITE_URL;
+  const loc = base.endsWith("/") ? `${base}#${frag}` : `${base}/#${frag}`;
+  const headers = new Headers({ Location: loc });
+  for (const c of [].concat(clearCookies || [])) headers.append("Set-Cookie", c);
+  return new Response(null, { status: 302, headers });
+}
+
+// ---- /installed -----------------------------------------------------------
+
+// Is the App installed on owner/repo? Lets the front-end decide whether to show
+// an "Install" prompt. Public read using the App JWT (no session needed).
+async function handleInstalled(request, env, cors) {
+  const url = new URL(request.url);
+  const owner = url.searchParams.get("owner");
+  const repo = url.searchParams.get("repo");
+  if (!owner || !repo) {
+    return json({ error: "owner and repo query params are required" }, 400, cors);
+  }
+  try {
+    const jwt = await makeAppJwt(env);
+    const resp = await fetch(
+      `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/installation`,
+      {
+        headers: {
+          "User-Agent": "github-commit-proxy",
+          Accept: "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+          Authorization: `Bearer ${jwt}`,
+        },
+      }
+    );
+    return json({ installed: resp.ok, owner, repo }, 200, cors);
+  } catch (err) {
+    return json({ installed: false, error: String(err.message || err) }, 200, cors);
+  }
 }
 
 // ---- /auth/me -------------------------------------------------------------
@@ -181,6 +263,27 @@ async function handleCommit(request, env, cors) {
     return json({ error: "body.content must be a string" }, 400, cors);
   }
 
+  // Resolve the target repo and authorize per mode.
+  let owner, repo;
+  if (multiTenant(env)) {
+    // Each user writes only to their own repo, under data/<login>/.
+    owner = body && body.owner;
+    repo = body && body.repo;
+    if (typeof owner !== "string" || !owner || typeof repo !== "string" || !repo) {
+      return json({ error: "body.owner and body.repo are required" }, 400, cors);
+    }
+    if (owner.toLowerCase() !== String(session.login).toLowerCase()) {
+      return json({ error: `you can only write to your own repos (@${session.login})` }, 403, cors);
+    }
+    const prefix = `data/${session.login}/`.toLowerCase();
+    if (!path.toLowerCase().startsWith(prefix)) {
+      return json({ error: `path must start with data/${session.login}/` }, 403, cors);
+    }
+  } else {
+    owner = env.REPO_OWNER;
+    repo = env.REPO_NAME;
+  }
+
   // Authoritative attribution at the git level — independent of file content.
   const author = {
     name: session.login,
@@ -188,12 +291,12 @@ async function handleCommit(request, env, cors) {
   };
 
   try {
-    const token = await getInstallationToken(env);
+    const token = await getInstallationToken(env, owner, repo);
 
     // Auto-manage sha (create or update); retry if it moves under us.
     for (let attempt = 0; attempt < 3; attempt++) {
-      const sha = await getFileSha(env, token, path, branch);
-      const res = await putContent(env, token, { path, content, message, branch, sha, author });
+      const sha = await getFileSha(token, owner, repo, path, branch);
+      const res = await putContent(token, owner, repo, { path, content, message, branch, sha, author });
       if (res.ok) {
         const data = await res.json().catch(() => ({}));
         return json(
@@ -281,7 +384,7 @@ async function hmacKey(secret) {
 
 // ---- GitHub App auth (installation token) ---------------------------------
 
-async function getInstallationToken(env) {
+async function getInstallationToken(env, owner, repo) {
   const jwt = await makeAppJwt(env);
   const appHeaders = {
     "User-Agent": "countdown-worker",
@@ -290,7 +393,7 @@ async function getInstallationToken(env) {
     Authorization: `Bearer ${jwt}`,
   };
 
-  const instUrl = `https://api.github.com/repos/${env.REPO_OWNER}/${env.REPO_NAME}/installation`;
+  const instUrl = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/installation`;
   const instResp = await fetch(instUrl, { headers: appHeaders });
   if (!instResp.ok) {
     throw new Error(`installation lookup failed: ${instResp.status} ${await instResp.text()}`);
@@ -302,7 +405,7 @@ async function getInstallationToken(env) {
     method: "POST",
     headers: appHeaders,
     body: JSON.stringify({
-      repositories: [env.REPO_NAME],
+      repositories: [repo],
       permissions: { contents: "write" },
     }),
   });
@@ -354,15 +457,15 @@ function ghHeaders(token) {
   };
 }
 
-function contentsUrl(env, path) {
+function contentsUrl(owner, repo, path) {
   // Keep slashes; encode each segment so paths like "data/x.json" work.
   const safe = path.split("/").map(encodeURIComponent).join("/");
-  return `https://api.github.com/repos/${env.REPO_OWNER}/${env.REPO_NAME}/contents/${safe}`;
+  return `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${safe}`;
 }
 
 // Current blob sha for a file, or null if it doesn't exist yet.
-async function getFileSha(env, token, path, branch) {
-  const resp = await fetch(`${contentsUrl(env, path)}?ref=${encodeURIComponent(branch)}`, {
+async function getFileSha(token, owner, repo, path, branch) {
+  const resp = await fetch(`${contentsUrl(owner, repo, path)}?ref=${encodeURIComponent(branch)}`, {
     headers: ghHeaders(token),
   });
   if (resp.status === 404) return null;
@@ -371,14 +474,14 @@ async function getFileSha(env, token, path, branch) {
 }
 
 // PUT a file's content. Returns the raw Response (caller checks .ok/.status).
-function putContent(env, token, { path, content, message, branch, sha, author }) {
+function putContent(token, owner, repo, { path, content, message, branch, sha, author }) {
   const body = { message, content: base64encodeUtf8(content), branch };
   if (sha) body.sha = sha;
   if (author) {
     body.author = author;
     body.committer = author;
   }
-  return fetch(contentsUrl(env, path), {
+  return fetch(contentsUrl(owner, repo, path), {
     method: "PUT",
     headers: ghHeaders(token),
     body: JSON.stringify(body),

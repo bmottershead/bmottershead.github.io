@@ -1,6 +1,22 @@
 # Plan 1 — Shared multi-tenant operator backend
 
-**Status:** second. Build after Plan 2 (self-hosted) is working.
+**Status:** backend code written (untested), gated behind `MULTI_TENANT`. Still
+needs: you registering the public App, the front-end `APP_SLUG`, and end-to-end
+testing — do those after Plan 2 (self-hosted) is verified working.
+
+**Done so far (committed, unverified):**
+- `worker.js`: `MULTI_TENANT` mode — per-repo installation tokens
+  (`getInstallationToken(env, owner, repo)`), `/commit` takes `{owner, repo}`
+  with an `owner === session.login` gate + `data/<login>/` path prefix, dynamic
+  validated OAuth return origin (`?site=`, github.io/localhost only), and a
+  `GET /installed?owner=&repo=` endpoint. Single-tenant is unchanged (default).
+- `tally.js`: self-detects `owner/repo` from the Pages URL, sends them on commit,
+  passes `?site=` on login, and shows an Install link when `APP_SLUG` is set.
+- `wrangler.toml`: documents the commented `MULTI_TENANT` toggle.
+
+**Still TODO:** register the public App (`contents:write` only), set `APP_SLUG`
+in `tally.js`, deploy an operator Worker with `MULTI_TENANT="true"` +
+empty `ALLOWED_LOGINS`, and test end-to-end.
 
 ## Goal
 

@@ -2,10 +2,30 @@ const WORKER_URL = "https://countdown.riverscape.workers.dev";
 const SESSION_KEY = "cd_session";
 const BATCHES_KEY = "cd_batches";   // local working store: array of batches
 
-// Repo the Worker commits to. The proxy is content-blind — this path and its
-// format are entirely the app's concern. Each user archives to their own file.
-const REPO = "bmottershead/bmottershead.github.io";
+// The committer-proxy's public App slug, used only by the multi-tenant /
+// shared-operator model to offer an "Install" link. Leave "" for the
+// self-hosted model — setup.sh prints the install link instead.
+const APP_SLUG = "";
 const BRANCH = "main";
+
+// Which repo this page belongs to. Auto-detected from the GitHub Pages URL so a
+// fork "just works"; override with <meta name="repo" content="owner/name">.
+function detectRepo() {
+    const meta = document.querySelector('meta[name="repo"]');
+    if (meta && meta.content && meta.content.includes("/")) {
+        const [o, r] = meta.content.split("/");
+        return { owner: o, repo: r };
+    }
+    const host = location.hostname;
+    const owner = host.endsWith(".github.io") ? host.slice(0, -".github.io".length) : null;
+    const seg = location.pathname.split("/").filter(Boolean)[0];
+    let repo = null;
+    if (owner && seg && !/\.html?$/i.test(seg)) repo = seg;   // project pages: /<repo>/
+    else if (owner) repo = `${owner}.github.io`;              // user pages: served at root
+    return { owner, repo };
+}
+const { owner: REPO_OWNER, repo: REPO_NAME } = detectRepo();
+const REPO = REPO_OWNER && REPO_NAME ? `${REPO_OWNER}/${REPO_NAME}` : "";
 const dataPath = (login) => `data/${login}/timestamps.json`;
 
 // Commit a file through the proxy. Returns the parsed response.
@@ -17,7 +37,7 @@ async function commit(path, content, message) {
             "Content-Type": "application/json",
             Authorization: "Bearer " + session
         },
-        body: JSON.stringify({ path, content, message })
+        body: JSON.stringify({ owner: REPO_OWNER, repo: REPO_NAME, path, content, message })
     });
     const data = await resp.json().catch(() => ({}));
     if (resp.status === 401) { signOut(); throw new Error(data.error || "Session expired."); }
@@ -114,6 +134,7 @@ async function loadSession(justLoggedIn) {
     }
     renderAuth();
     render();
+    maybePromptInstall();
 }
 
 // Pull data/<login>/timestamps.json from the public repo into the local store.
@@ -155,8 +176,31 @@ function renderAuth() {
 }
 
 loginBtn.addEventListener("click", () => {
-    window.location.href = WORKER_URL + "/auth/login";
+    // Tell the Worker which site to return to (needed in the shared-operator
+    // model where one Worker serves many forks; harmless otherwise).
+    const site = location.origin + location.pathname;
+    window.location.href = WORKER_URL + "/auth/login?site=" + encodeURIComponent(site);
 });
+
+// Shared-operator model only: if the App isn't installed on this repo yet,
+// surface a one-click install link. Inert when APP_SLUG is "".
+async function maybePromptInstall() {
+    if (!APP_SLUG || !user || !REPO_OWNER || !REPO_NAME) return;
+    try {
+        const url = `${WORKER_URL}/installed?owner=${encodeURIComponent(REPO_OWNER)}&repo=${encodeURIComponent(REPO_NAME)}`;
+        const data = await (await fetch(url)).json().catch(() => ({}));
+        if (data && data.installed) return;
+    } catch {
+        return;
+    }
+    setStatus("One more step — install the app on this repo so it can save: ");
+    const a = document.createElement("a");
+    a.href = `https://github.com/apps/${APP_SLUG}/installations/new`;
+    a.textContent = "Install on " + REPO_NAME;
+    a.target = "_blank";
+    a.rel = "noopener";
+    statusEl.appendChild(a);
+}
 
 logoutBtn.addEventListener("click", () => signOut());
 

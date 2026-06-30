@@ -20,6 +20,12 @@ ALLOWED_LOGINS = "bmottershead"
 # Browser origins allowed to call the Worker (CORS).
 ALLOWED_ORIGINS = "https://bmottershead.github.io,http://localhost:8000"
 
+# Shared-operator mode (docs/PLAN-shared.md). Leave UNSET for a normal
+# single-repo self-hosted deploy. Set to "true" only on the operator's one
+# Worker: then each signed-in user commits to their OWN repo (owner === login),
+# under data/<login>/, and ALLOWED_LOGINS should be empty (any user).
+# MULTI_TENANT = "true"
+
 # Secrets (set with `wrangler secret put <NAME>`, do NOT put here):
 #   GITHUB_APP_PRIVATE_KEY   App private key, PKCS#8 PEM   (already set)
 #   GITHUB_CLIENT_SECRET     OAuth client secret of the App
