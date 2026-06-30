@@ -35,6 +35,7 @@ the repo's `_config.yml` Jekyll `exclude`), so the Worker source isn't served.
 | `worker.js` | The Worker: auth routes + generic gated commit. |
 | `wrangler.toml.example` | Template for the Worker config. The real `wrangler.toml` is **generated** (gitignored) — `setup.sh` copies this and fills it in. |
 | `setup.sh` | One-shot: registers the GitHub App **and** deploys the Worker. |
+| `teardown.sh` | Inverse of `setup.sh`: deletes the Worker, deep-links the App's delete page. |
 | `create-app.mjs` | The App-creation gadget (GitHub manifest flow) `setup.sh` drives; it builds the manifest inline. |
 | `../config.js` | The **one** deployment-specific frontend file (`export const WORKER_URL`). `setup.sh` writes it; `tally.js` imports it, so app source stays identical across deployments. |
 | `../index.html`, `../tally.js`, `../style.css` | The demo front-end (sign-in UI + count / new batch / archive). Identical across deployments — never edited by setup. |
@@ -132,6 +133,18 @@ auto-enable Pages/Actions; otherwise the script prints the two toggles).
 | `GITHUB_APP_PRIVATE_KEY` | App private key, **PKCS#8** PEM. |
 | `GITHUB_CLIENT_SECRET` | OAuth client secret of the App. |
 | `SESSION_SECRET` | Random key for signing session JWTs (HS256). |
+
+## Teardown
+
+```sh
+cd <repo>/committer-proxy && ./teardown.sh
+```
+
+Deletes this deployment's **Worker** automatically (name read from the local
+`wrangler.toml`, else derived), then deep-links the **GitHub App**'s delete page.
+The App is the one manual click — GitHub has no App-*deletion* API, mirroring how
+App *creation* needs a browser "Create" click. Override the worker name with
+`WORKER_NAME=...`.
 
 ## Re-deploy
 
