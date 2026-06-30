@@ -1,10 +1,9 @@
 *~
-plans/
-
-# Secrets / build artifacts — never commit these (committer-proxy/ Worker state).
-*.pem
 .app/
 .wrangler/
-node_modules/
 .dev.vars
+plans/
+*.pem
+node_modules/
 committer-proxy/wrangler.toml
+untracked/
