@@ -235,7 +235,7 @@ else
   git -C "$REPO_ROOT" push || echo "(! couldn't push config.js — push manually when ready)"
 fi
 
-# ---- 7) enable Pages + Actions on the fork --------------------------------
+# ---- 7) enable Pages + Actions, optional email (Resend) secrets -----------
 say "7/7  Finishing up"
 if command -v gh >/dev/null; then
   if gh api -X PUT "repos/$REPO_OWNER/$REPO_NAME/actions/permissions" -F enabled=true >/dev/null 2>&1; then
@@ -248,10 +248,47 @@ if command -v gh >/dev/null; then
   else
     echo "(could not auto-enable Pages; do it in Settings → Pages)"
   fi
+
+  # Secrets for the archive-email.yml workflow (Resend). Unlike the Worker's
+  # secrets, these are GitHub *Actions* secrets and don't transfer on fork or
+  # template — so set them here. Blank API key = skip the email feature.
+  rk="${RESEND_API_KEY:-}"; ne="${NOTIFY_EMAIL:-}"; mf="${MAIL_FROM:-}"
+  if [ -z "$rk" ]; then
+    printf 'Optional Resend API key for email-on-archive (blank = skip): '
+    read -r rk
+  fi
+  if [ -n "$rk" ]; then
+    if printf '%s' "$rk" | gh secret set RESEND_API_KEY --repo "$REPO_OWNER/$REPO_NAME" >/dev/null 2>&1; then
+      echo "Set RESEND_API_KEY."
+    else
+      echo "(failed to set RESEND_API_KEY — check repo admin, or set it manually)"
+    fi
+    if [ -z "$ne" ]; then printf '  Notify email (where to send): '; read -r ne; fi
+    if [ -n "$ne" ]; then
+      if printf '%s' "$ne" | gh secret set NOTIFY_EMAIL --repo "$REPO_OWNER/$REPO_NAME" >/dev/null 2>&1; then
+        echo "Set NOTIFY_EMAIL."
+      else
+        echo "(failed to set NOTIFY_EMAIL)"
+      fi
+    else
+      echo "(no NOTIFY_EMAIL — the email won't send until you set it)"
+    fi
+    if [ -z "$mf" ]; then printf '  From address [onboarding@resend.dev]: '; read -r mf; fi
+    if [ -n "$mf" ]; then
+      if printf '%s' "$mf" | gh secret set MAIL_FROM --repo "$REPO_OWNER/$REPO_NAME" >/dev/null 2>&1; then
+        echo "Set MAIL_FROM."
+      else
+        echo "(failed to set MAIL_FROM)"
+      fi
+    fi
+  else
+    echo "Skipped email secrets. Add later: gh secret set RESEND_API_KEY --repo $REPO_OWNER/$REPO_NAME"
+  fi
 else
-  echo "Install 'gh' to auto-enable Pages/Actions, or do it by hand:"
+  echo "Install 'gh' to auto-enable Pages/Actions + set email secrets, or by hand:"
   echo "  • Settings → Actions → enable workflows on this fork"
   echo "  • Settings → Pages → deploy from main / (root)"
+  echo "  • Settings → Secrets → Actions: RESEND_API_KEY, NOTIFY_EMAIL (for archive-email.yml)"
 fi
 
 DONE=1

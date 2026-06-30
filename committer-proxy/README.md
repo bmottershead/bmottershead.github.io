@@ -73,8 +73,13 @@ Pages URL, allowed login, worker name — no `wrangler.toml` editing), then:
 4. re-deploys, writes `config.js` (the one per-deploy frontend file) to point at
    your Worker, and commits + pushes **just that** to your fork (app source is
    untouched);
-5. enables **Pages + Actions** on the fork (via `gh` if present), and prints the
-   **Install** link — one browser click to finish.
+5. enables **Pages + Actions** on the fork (via `gh` if present), optionally
+   sets the **Resend email** Actions secrets (`RESEND_API_KEY` / `NOTIFY_EMAIL`
+   for `archive-email.yml` — blank to skip), and prints the **Install** link.
+
+Note the two kinds of secret: the **Worker** secrets live in Cloudflare; the
+**Action** secrets (Resend) live in GitHub Actions. Neither transfers on
+fork/template — `setup.sh` provisions both.
 
 On success it deletes the transient `.app/` dir, so the secrets live only in
 Cloudflare. On failure it keeps `.app/` so a re-run won't re-mint the App.
