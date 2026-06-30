@@ -66,10 +66,12 @@ SITE_URL="${SITE_URL:-$SITE_URL_DEFAULT}"
 ALLOWED_LOGINS="$REPO_OWNER"
 ALLOWED_ORIGINS="$ORIGIN,http://localhost:8000"
 
-# worker name: keep an existing non-placeholder name in wrangler.toml, else derive.
-current_name="$(sed -n -E 's/^name[[:space:]]*=[[:space:]]*"(.*)"[[:space:]]*$/\1/p' "$TOML" | head -1)"
+# Worker name: ALWAYS derive a fork-unique name from the repo. Do NOT inherit the
+# `name` already in wrangler.toml — for a fork that's the UPSTREAM owner's worker
+# name, and reusing it would OVERWRITE their Worker if you deploy to an account
+# that already has it. Override with WORKER_NAME=... only if you mean to.
 derived_name="tally-$(printf '%s' "$repo_lc" | tr -c 'a-z0-9-' '-' | sed -E 's/-+/-/g; s/^-//; s/-$//')"
-WORKER_NAME="${WORKER_NAME:-${current_name:-$derived_name}}"
+WORKER_NAME="${WORKER_NAME:-$derived_name}"
 APP_NAME="${APP_NAME:-$derived_name}"
 
 say "Repo:    $REPO_OWNER/$REPO_NAME"
@@ -133,6 +135,22 @@ set_toml REPO_NAME "$REPO_NAME"
 set_toml SITE_URL "$SITE_URL"
 set_toml ALLOWED_LOGINS "$ALLOWED_LOGINS"
 set_toml ALLOWED_ORIGINS "$ALLOWED_ORIGINS"
+
+# ---- confirm the Cloudflare target before any deploy ----------------------
+# Deploy goes to whatever account wrangler is authenticated to. Show it and the
+# Worker name so a wrong account / name collision is caught BEFORE overwriting.
+say "Confirm the Cloudflare target — the Worker will be created here:"
+npx --yes wrangler whoami 2>&1 | sed -n '1,12p' || true
+echo
+echo "  Worker name : $WORKER_NAME"
+echo "  For repo    : $REPO_OWNER/$REPO_NAME"
+echo "If this is the WRONG Cloudflare account, abort, switch accounts"
+echo "(npx wrangler logout && npx wrangler login, or set CF_API_TOKEN), and re-run."
+if [ "${ASSUME_YES:-}" != "1" ]; then
+  printf 'Deploy to this account? [y/N] '
+  read -r ans
+  case "$ans" in [yY] | [yY][eE][sS]) ;; *) die "aborted before deploy" ;; esac
+fi
 
 # ---- 2) first deploy to learn the Worker URL ------------------------------
 if [ -z "${WORKER_URL:-}" ]; then
