@@ -31,8 +31,9 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$HERE/.." && pwd)"
 APPDIR="$HERE/.app"
-TOML="$HERE/wrangler.toml"
-TALLY="$REPO_ROOT/tally.js"
+EXAMPLE="$HERE/wrangler.toml.example"
+TOML="$HERE/wrangler.toml"          # generated (gitignored); copied from EXAMPLE
+CONFIG="$REPO_ROOT/config.js"       # the one committed per-deploy frontend file
 
 say() { printf '\n\033[1m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[31mError:\033[0m %s\n' "$*" >&2; exit 1; }
@@ -41,7 +42,7 @@ die() { printf '\033[31mError:\033[0m %s\n' "$*" >&2; exit 1; }
 for tool in node openssl npx git; do
   command -v "$tool" >/dev/null || die "missing required tool: $tool"
 done
-[ -f "$TOML" ] || die "wrangler.toml not found at $TOML"
+[ -f "$EXAMPLE" ] || die "wrangler.toml.example not found at $EXAMPLE"
 
 # ---- detect repo from git remote -----------------------------------------
 remote="$(git -C "$REPO_ROOT" config --get remote.origin.url || true)"
@@ -63,8 +64,28 @@ else
   SITE_URL_DEFAULT="$ORIGIN/$REPO_NAME"
 fi
 SITE_URL="${SITE_URL:-$SITE_URL_DEFAULT}"
-ALLOWED_LOGINS="$REPO_OWNER"
 ALLOWED_ORIGINS="$ORIGIN,http://localhost:8000"
+
+# Who may count: the GitHub user RUNNING setup (the operator), NOT the repo owner.
+# For an org-owned fork the owner is the org NAME, which can never match an
+# individual login (OAuth always signs in a user, never an org). Fall back to the
+# repo owner only if gh can't tell us who the operator is. Override with
+# ALLOWED_LOGINS=... ("" = any signed-in user).
+operator=""
+if command -v gh >/dev/null; then
+  operator="$(gh api user --jq .login 2>/dev/null || true)"
+fi
+ALLOWED_LOGINS="${ALLOWED_LOGINS:-${operator:-$REPO_OWNER}}"
+
+# If the fork owner is a GitHub ORG, the App must be created UNDER that org — a
+# personal App can't be installed on an org's repos. Detect and default ORG;
+# override with ORG=... explicitly.
+if [ -z "${ORG:-}" ] && command -v gh >/dev/null; then
+  owner_type="$(gh api "users/$REPO_OWNER" --jq .type 2>/dev/null || true)"
+  if [ "$owner_type" = "Organization" ]; then
+    ORG="$REPO_OWNER"
+  fi
+fi
 
 # Worker name: ALWAYS derive a fork-unique name from the repo. Do NOT inherit the
 # `name` already in wrangler.toml — for a fork that's the UPSTREAM owner's worker
@@ -77,7 +98,8 @@ APP_NAME="${APP_NAME:-$derived_name}"
 say "Repo:    $REPO_OWNER/$REPO_NAME"
 echo "Site:    $SITE_URL"
 echo "Worker:  $WORKER_NAME"
-echo "App:     $APP_NAME"
+echo "App:     $APP_NAME${ORG:+   (under org: $ORG)}"
+echo "Allowed: $ALLOWED_LOGINS"
 
 # ---- cloudflare auth ------------------------------------------------------
 # wrangler uses CLOUDFLARE_API_TOKEN if set, else an interactive `wrangler login`
@@ -129,6 +151,8 @@ set_toml() {
 
 # ---- 1) write config ------------------------------------------------------
 say "1/7  Writing wrangler.toml config for $REPO_OWNER/$REPO_NAME"
+# wrangler.toml is a generated artifact (gitignored); seed it from the template.
+[ -f "$TOML" ] || cp "$EXAMPLE" "$TOML"
 set_toml name "$WORKER_NAME"
 set_toml REPO_OWNER "$REPO_OWNER"
 set_toml REPO_NAME "$REPO_NAME"
@@ -191,18 +215,24 @@ wrangler secret put GITHUB_APP_PRIVATE_KEY < "$APPDIR/private-key-pkcs8.pem"
 wrangler secret put GITHUB_CLIENT_SECRET   < "$APPDIR/client-secret.txt"
 openssl rand -base64 32 | wrangler secret put SESSION_SECRET
 
-# ---- 6) redeploy with real config + wire the site ------------------------
-say "6/7  Re-deploying the Worker and wiring the site to it"
+# ---- 6) redeploy + write the site's config (config.js, not app source) ----
+say "6/7  Re-deploying the Worker and writing the site config (config.js)"
 wrangler deploy
-if [ -f "$TALLY" ]; then
-  sed -i -E "s|^const WORKER_URL = \".*\";|const WORKER_URL = \"$WORKER_URL\";|" "$TALLY"
-  if ! git -C "$REPO_ROOT" diff --quiet -- "$TALLY" "$TOML"; then
-    git -C "$REPO_ROOT" add -- "$TALLY" "$TOML"
-    git -C "$REPO_ROOT" commit -q -m "Wire site to its committer-proxy Worker ($WORKER_NAME)" || true
-    git -C "$REPO_ROOT" push || echo "(! couldn't push — push manually when ready)"
-  fi
+# config.js is the ONE deployment-specific frontend file. App source (tally.js)
+# imports it, so the source stays identical across deployments. Pages must serve
+# it, so it IS committed (unlike the gitignored wrangler.toml).
+cat > "$CONFIG" <<EOF
+// Deployment-specific frontend config — written by committer-proxy/setup.sh.
+// Points the app at this deployment's Worker; tally.js imports it, so the app
+// source is identical in every deployment.
+export const WORKER_URL = "$WORKER_URL";
+EOF
+git -C "$REPO_ROOT" add -- "$CONFIG"
+if git -C "$REPO_ROOT" diff --cached --quiet -- "$CONFIG"; then
+  echo "config.js already current."
 else
-  echo "(! $TALLY not found — set WORKER_URL in your front-end by hand: $WORKER_URL)"
+  git -C "$REPO_ROOT" commit -q -m "Point site at its Worker ($WORKER_NAME)"
+  git -C "$REPO_ROOT" push || echo "(! couldn't push config.js — push manually when ready)"
 fi
 
 # ---- 7) enable Pages + Actions on the fork --------------------------------

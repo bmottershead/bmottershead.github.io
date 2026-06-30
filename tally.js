@@ -1,4 +1,4 @@
-const WORKER_URL = "https://countdown.riverscape.workers.dev";
+import { WORKER_URL } from "./config.js";
 const SESSION_KEY = "cd_session";
 const BATCHES_KEY = "cd_batches";   // local working store: array of batches
 

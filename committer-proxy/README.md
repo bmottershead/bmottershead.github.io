@@ -33,10 +33,11 @@ the repo's `_config.yml` Jekyll `exclude`), so the Worker source isn't served.
 | Path | Role |
 |------|------|
 | `worker.js` | The Worker: auth routes + generic gated commit. |
-| `wrangler.toml` | Non-secret config (`[vars]`). |
+| `wrangler.toml.example` | Template for the Worker config. The real `wrangler.toml` is **generated** (gitignored) — `setup.sh` copies this and fills it in. |
 | `setup.sh` | One-shot: registers the GitHub App **and** deploys the Worker. |
 | `create-app.mjs` | The App-creation gadget (GitHub manifest flow) `setup.sh` drives; it builds the manifest inline. |
-| `../index.html`, `../tally.js`, `../style.css` | The demo front-end (sign-in UI + count / new batch / archive). It owns the file paths/formats. |
+| `../config.js` | The **one** deployment-specific frontend file (`export const WORKER_URL`). `setup.sh` writes it; `tally.js` imports it, so app source stays identical across deployments. |
+| `../index.html`, `../tally.js`, `../style.css` | The demo front-end (sign-in UI + count / new batch / archive). Identical across deployments — never edited by setup. |
 | `../data/<login>/timestamps.json` | Where the demo archives each user's batches (written via `/commit`). |
 
 ## Routes
@@ -68,8 +69,9 @@ Pages URL, allowed login, worker name — no `wrangler.toml` editing), then:
 3. converts the key to PKCS#8, writes the App's two public IDs into
    `wrangler.toml`, and **pipes the three secrets to Cloudflare** (no secret is
    ever pasted);
-4. re-deploys, points `tally.js`'s `WORKER_URL` at your Worker, and commits +
-   pushes that to your fork;
+4. re-deploys, writes `config.js` (the one per-deploy frontend file) to point at
+   your Worker, and commits + pushes **just that** to your fork (app source is
+   untouched);
 5. enables **Pages + Actions** on the fork (via `gh` if present), and prints the
    **Install** link — one browser click to finish.
 
@@ -97,20 +99,23 @@ auto-enable Pages/Actions; otherwise the script prints the two toggles).
    openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt \
      -in your-app.private-key.pem -out private-key-pkcs8.pem
    ```
-3. Put `GITHUB_APP_ID` and `GITHUB_CLIENT_ID` into `wrangler.toml`, then set the
-   three secrets and deploy:
+3. Create `wrangler.toml` from the template and fill it in, then set the three
+   secrets and deploy:
    ```sh
+   cp wrangler.toml.example wrangler.toml   # then edit its [vars] for your repo
    wrangler secret put GITHUB_APP_PRIVATE_KEY < private-key-pkcs8.pem
    wrangler secret put GITHUB_CLIENT_SECRET          # paste at prompt
    openssl rand -base64 32 | wrangler secret put SESSION_SECRET
    wrangler deploy
    rm private-key-pkcs8.pem                          # key now lives only in Cloudflare
    ```
-4. Install the App on the repo (App page → Install App → only this repo).
+4. Point the site at the Worker: set `WORKER_URL` in `../config.js`.
+5. Install the App on the repo (App page → Install App → only this repo).
 
 ## Configuration
 
-**`[vars]` in `wrangler.toml`** (non-secret):
+**`[vars]` in `wrangler.toml`** (non-secret; generated from
+`wrangler.toml.example`, gitignored):
 
 | Var | Meaning |
 |---|---|
@@ -136,8 +141,8 @@ auto-enable Pages/Actions; otherwise the script prints the two toggles).
 cd bmottershead.github.io/committer-proxy && npx wrangler deploy
 ```
 
-The site points at the Worker via `WORKER_URL` in `../tally.js` — update it
-if your Worker URL differs.
+The site points at the Worker via `WORKER_URL` in `../config.js` — update it
+if your Worker URL differs. (`tally.js` imports it, so app source never changes.)
 
 ## Test
 

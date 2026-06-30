@@ -7,3 +7,4 @@ plans/
 .wrangler/
 node_modules/
 .dev.vars
+committer-proxy/wrangler.toml
