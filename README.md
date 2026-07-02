@@ -4,6 +4,8 @@ stores the timestamps of clicks in the browser localStorage.
 
 The localStorage can be archived (committed) upon user request 
 back to the repo, using a Cloudflare Worker as an OAuth Proxy. 
+The site is intended mainly as an exploration/demo of this 
+functionality, the application itself being rather minimalistic.
 
 A GitHub Action sends a confirmation email after 
 a successful commit of the timestamps.
